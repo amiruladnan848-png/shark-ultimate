@@ -15,7 +15,7 @@ export function PriceTicker() {
       try {
         const data = await fetchQ({ data: { symbols: PAIRS.map((p) => p.symbol) } });
         if (!alive) return;
-        const meta = new Map(PAIRS.map((p) => [p.symbol, p]));
+        const meta = new Map<string, (typeof PAIRS)[number]>(PAIRS.map((p) => [p.symbol, p]));
         setTicks(
           data.map((d) => {
             const m = meta.get(d.symbol)!;
