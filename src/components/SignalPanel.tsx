@@ -1,20 +1,24 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useServerFn } from "@tanstack/react-start";
 import { TrendingUp, TrendingDown, Minus, Zap, Target, Shield, Activity } from "lucide-react";
-import { fetchKlines, generateSignal, type Signal } from "@/lib/signals";
+import { generateSignal, formatPrice, type Signal } from "@/lib/signals";
+import { fetchYahooKlines } from "@/lib/market.functions";
 
-export function SignalPanel({ symbol, label }: { symbol: string; label: string }) {
+export function SignalPanel({ symbol, label, digits }: { symbol: string; label: string; digits: number }) {
   const [signal, setSignal] = useState<Signal | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(60);
+  const fetchK = useServerFn(fetchYahooKlines);
 
   useEffect(() => {
     let alive = true;
     const run = async () => {
       try {
-        const k = await fetchKlines(symbol);
+        const k = await fetchK({ data: { symbol } });
         if (!alive) return;
+        if (!k.length) throw new Error("No market data");
         setSignal(generateSignal(k));
         setError(null);
       } catch (e) {
@@ -25,16 +29,14 @@ export function SignalPanel({ symbol, label }: { symbol: string; label: string }
     };
     setLoading(true);
     setSignal(null);
+    setError(null);
     run();
-    const id = setInterval(run, 5000);
+    const id = setInterval(run, 8000);
     return () => { alive = false; clearInterval(id); };
-  }, [symbol]);
+  }, [symbol, fetchK]);
 
   useEffect(() => {
-    const tick = () => {
-      const s = new Date().getSeconds();
-      setCountdown(60 - s);
-    };
+    const tick = () => setCountdown(60 - new Date().getSeconds());
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
@@ -46,8 +48,6 @@ export function SignalPanel({ symbol, label }: { symbol: string; label: string }
   const DirIcon =
     signal?.direction === "BUY" ? TrendingUp :
     signal?.direction === "SELL" ? TrendingDown : Minus;
-
-  const fmt = (n: number) => n >= 1000 ? n.toFixed(2) : n >= 1 ? n.toFixed(4) : n.toFixed(6);
 
   return (
     <div className="glass rounded-3xl p-5 relative overflow-hidden">
@@ -74,14 +74,14 @@ export function SignalPanel({ symbol, label }: { symbol: string; label: string }
         </div>
       )}
 
-      {error && (
+      {error && !loading && (
         <div className="py-6 text-center text-sm text-destructive">{error}</div>
       )}
 
       <AnimatePresence mode="wait">
-        {signal && !error && (
+        {signal && (
           <motion.div
-            key={signal.direction + Math.floor(signal.ts / 5000)}
+            key={signal.direction + Math.floor(signal.ts / 8000)}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
@@ -95,7 +95,7 @@ export function SignalPanel({ symbol, label }: { symbol: string; label: string }
                   initial={{ scale: 1.05, color: "var(--laser)" }}
                   animate={{ scale: 1, color: "var(--foreground)" }}
                   className="text-2xl font-bold font-mono"
-                >${fmt(signal.price)}</motion.div>
+                >{formatPrice(signal.price, digits)}</motion.div>
               </div>
               <motion.div
                 animate={{ scale: [1, 1.04, 1] }}
@@ -127,20 +127,20 @@ export function SignalPanel({ symbol, label }: { symbol: string; label: string }
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
                   <Target className="w-3 h-3 text-bull" /> Target
                 </div>
-                <div className="font-mono text-sm text-bull">${fmt(signal.target)}</div>
+                <div className="font-mono text-sm text-bull">{formatPrice(signal.target, digits)}</div>
               </div>
               <div className="glass rounded-xl p-3">
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
                   <Shield className="w-3 h-3 text-bear" /> Stop
                 </div>
-                <div className="font-mono text-sm text-bear">${fmt(signal.stop)}</div>
+                <div className="font-mono text-sm text-bear">{formatPrice(signal.stop, digits)}</div>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2 mb-4 text-center">
               <Metric label="RSI" value={signal.rsi.toFixed(1)} tone={signal.rsi > 70 ? "bear" : signal.rsi < 30 ? "bull" : "neutral"} />
-              <Metric label="EMA9" value={fmt(signal.ema9)} />
-              <Metric label="MOM%" value={signal.momentum.toFixed(2)} tone={signal.momentum > 0 ? "bull" : "bear"} />
+              <Metric label="EMA9" value={formatPrice(signal.ema9, digits)} />
+              <Metric label="MOM%" value={signal.momentum.toFixed(3)} tone={signal.momentum > 0 ? "bull" : "bear"} />
             </div>
 
             <div className="text-xs text-muted-foreground leading-relaxed border-l-2 border-laser/60 pl-3">
