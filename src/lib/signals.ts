@@ -1,24 +1,16 @@
-// Technical analysis signal engine — runs on real Binance 1m klines.
-// Outputs a directional bias for the NEXT minute with a confidence score
-// derived from EMA cross strength, RSI position, and short-term momentum.
+// Technical analysis signal engine — runs on real Yahoo Finance 1m klines.
+import type { Kline } from "./market.functions";
 
-export type Kline = {
-  openTime: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-};
+export type { Kline };
 
 export type Signal = {
   direction: "BUY" | "SELL" | "HOLD";
-  confidence: number; // 0-100
+  confidence: number;
   price: number;
   ema9: number;
   ema21: number;
   rsi: number;
-  momentum: number; // % change last 5 candles
+  momentum: number;
   target: number;
   stop: number;
   reason: string;
@@ -61,7 +53,8 @@ export function generateSignal(klines: Kline[]): Signal {
   const prevE9 = e9arr[e9arr.length - 2];
   const prevE21 = e21arr[e21arr.length - 2];
   const r = rsi(closes);
-  const momentum = ((price - closes[closes.length - 6]) / closes[closes.length - 6]) * 100;
+  const base = closes[closes.length - 6] ?? closes[0];
+  const momentum = ((price - base) / base) * 100;
 
   const spread = ((ema9 - ema21) / ema21) * 100;
   const prevSpread = ((prevE9 - prevE21) / prevE21) * 100;
@@ -76,21 +69,21 @@ export function generateSignal(klines: Kline[]): Signal {
 
   if (bullish) {
     direction = "BUY";
-    confidence = Math.min(98, 60 + Math.abs(spread) * 40 + (r - 50) * 0.5 + Math.abs(momentum) * 8);
+    confidence = Math.min(98, 65 + Math.abs(spread) * 800 + (r - 50) * 0.6 + Math.abs(momentum) * 50);
     reason = crossing
       ? "Fresh bullish EMA cross + RSI strength + positive momentum."
       : "EMA9 above EMA21, RSI > 50, momentum positive — uptrend continuation.";
   } else if (bearish) {
     direction = "SELL";
-    confidence = Math.min(98, 60 + Math.abs(spread) * 40 + (50 - r) * 0.5 + Math.abs(momentum) * 8);
+    confidence = Math.min(98, 65 + Math.abs(spread) * 800 + (50 - r) * 0.6 + Math.abs(momentum) * 50);
     reason = crossing
       ? "Fresh bearish EMA cross + RSI weakness + negative momentum."
       : "EMA9 below EMA21, RSI < 50, momentum negative — downtrend continuation.";
   } else {
-    confidence = 45 + Math.random() * 8;
+    confidence = 48 + Math.random() * 6;
   }
 
-  const atr = klines.slice(-14).reduce((s, k) => s + (k.high - k.low), 0) / 14;
+  const atr = klines.slice(-14).reduce((s, k) => s + (k.high - k.low), 0) / Math.max(1, Math.min(14, klines.length));
   const target = direction === "BUY" ? price + atr * 1.2 : direction === "SELL" ? price - atr * 1.2 : price;
   const stop = direction === "BUY" ? price - atr * 0.8 : direction === "SELL" ? price + atr * 0.8 : price;
 
@@ -109,32 +102,22 @@ export function generateSignal(klines: Kline[]): Signal {
   };
 }
 
+// Real popular forex pairs — prices sourced from Yahoo Finance.
 export const PAIRS = [
-  { symbol: "BTCUSDT", label: "BTC / USDT", tv: "BINANCE:BTCUSDT" },
-  { symbol: "ETHUSDT", label: "ETH / USDT", tv: "BINANCE:ETHUSDT" },
-  { symbol: "BNBUSDT", label: "BNB / USDT", tv: "BINANCE:BNBUSDT" },
-  { symbol: "SOLUSDT", label: "SOL / USDT", tv: "BINANCE:SOLUSDT" },
-  { symbol: "XRPUSDT", label: "XRP / USDT", tv: "BINANCE:XRPUSDT" },
-  { symbol: "ADAUSDT", label: "ADA / USDT", tv: "BINANCE:ADAUSDT" },
-  { symbol: "DOGEUSDT", label: "DOGE / USDT", tv: "BINANCE:DOGEUSDT" },
-  { symbol: "AVAXUSDT", label: "AVAX / USDT", tv: "BINANCE:AVAXUSDT" },
-  { symbol: "LINKUSDT", label: "LINK / USDT", tv: "BINANCE:LINKUSDT" },
-  { symbol: "MATICUSDT", label: "MATIC / USDT", tv: "BINANCE:MATICUSDT" },
+  { symbol: "EURUSD=X", label: "EUR / USD", tv: "FX:EURUSD", digits: 5 },
+  { symbol: "GBPUSD=X", label: "GBP / USD", tv: "FX:GBPUSD", digits: 5 },
+  { symbol: "JPY=X",    label: "USD / JPY", tv: "FX:USDJPY", digits: 3 },
+  { symbol: "CHF=X",    label: "USD / CHF", tv: "FX:USDCHF", digits: 5 },
+  { symbol: "AUDUSD=X", label: "AUD / USD", tv: "FX:AUDUSD", digits: 5 },
+  { symbol: "CAD=X",    label: "USD / CAD", tv: "FX:USDCAD", digits: 5 },
+  { symbol: "NZDUSD=X", label: "NZD / USD", tv: "FX:NZDUSD", digits: 5 },
+  { symbol: "EURGBP=X", label: "EUR / GBP", tv: "FX:EURGBP", digits: 5 },
+  { symbol: "EURJPY=X", label: "EUR / JPY", tv: "FX:EURJPY", digits: 3 },
+  { symbol: "GBPJPY=X", label: "GBP / JPY", tv: "FX:GBPJPY", digits: 3 },
 ] as const;
 
 export type PairSymbol = (typeof PAIRS)[number]["symbol"];
 
-export async function fetchKlines(symbol: string): Promise<Kline[]> {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=1m&limit=100`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Failed to fetch market data");
-  const raw = (await res.json()) as unknown[][];
-  return raw.map((r) => ({
-    openTime: r[0] as number,
-    open: parseFloat(r[1] as string),
-    high: parseFloat(r[2] as string),
-    low: parseFloat(r[3] as string),
-    close: parseFloat(r[4] as string),
-    volume: parseFloat(r[5] as string),
-  }));
+export function formatPrice(n: number, digits: number) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
