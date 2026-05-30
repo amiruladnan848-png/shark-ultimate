@@ -26,6 +26,16 @@ export function PinLock({ children }: { children: React.ReactNode }) {
     }
   }, [pin]);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (unlocked) return;
+      if (/^[0-9]$/.test(event.key)) setPin((current) => current.length < 6 ? current + event.key : current);
+      if (event.key === "Backspace") setPin((current) => current.slice(0, -1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [unlocked]);
+
   const press = (n: string) => pin.length < 6 && setPin(pin + n);
   const back = () => setPin(pin.slice(0, -1));
 

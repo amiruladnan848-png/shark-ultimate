@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Zap, Radar } from "lucide-react";
+import { LockKeyhole, Radar, ScanLine, Zap } from "lucide-react";
 import { PinLock } from "@/components/PinLock";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import { SignalPanel } from "@/components/SignalPanel";
@@ -35,7 +35,7 @@ function Dashboard() {
   const active = PAIRS.find((p) => p.symbol === symbol)!;
 
   return (
-    <div className="min-h-screen px-4 sm:px-6 py-4 max-w-7xl mx-auto">
+    <div className="min-h-screen px-4 sm:px-6 py-4 max-w-7xl mx-auto relative">
       <motion.header
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -45,13 +45,13 @@ function Dashboard() {
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-            className="w-10 h-10 rounded-xl shark-grad flex items-center justify-center"
+            className="w-10 h-10 rounded-xl shark-grad flex items-center justify-center shadow-laser"
           >
             <Radar className="w-5 h-5 text-background" />
           </motion.div>
           <div>
             <h1 className="text-xl font-bold shark-text leading-none">Shark-Ultimate</h1>
-            <p className="text-[10px] text-muted-foreground tracking-wider uppercase">Laser Signal System</p>
+             <p className="text-[10px] text-muted-foreground tracking-wider uppercase">Manual Laser Signal System</p>
           </div>
         </div>
         <BDClock />
@@ -84,7 +84,7 @@ function Dashboard() {
         >
           <div className="absolute top-3 left-4 z-10 flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground pointer-events-none">
             <Zap className="w-3 h-3 text-laser" />
-            Live · 1m · {active.label}
+            TradingView · 1m · {active.label}
           </div>
           <TradingViewChart symbol={active.tv} />
         </motion.div>
@@ -99,10 +99,11 @@ function Dashboard() {
           <div className="glass rounded-3xl p-4 mt-4">
             <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Engine</div>
             <ul className="text-xs space-y-1.5 text-muted-foreground">
-              <li className="flex justify-between"><span>Data feed</span><span className="text-foreground">Binance · live</span></li>
-              <li className="flex justify-between"><span>Refresh</span><span className="text-foreground">5s</span></li>
+              <li className="flex justify-between"><span>Data feed</span><span className="text-foreground">Yahoo Finance · live FX</span></li>
+              <li className="flex justify-between"><span>Signal mode</span><span className="text-foreground inline-flex items-center gap-1"><ScanLine className="w-3 h-3 text-laser" /> Manual</span></li>
               <li className="flex justify-between"><span>Interval</span><span className="text-foreground">1 minute</span></li>
               <li className="flex justify-between"><span>Indicators</span><span className="text-foreground">EMA9/21 · RSI14 · MOM</span></li>
+              <li className="flex justify-between"><span>Weekend</span><span className="text-foreground inline-flex items-center gap-1"><LockKeyhole className="w-3 h-3 text-laser" /> Locked</span></li>
               <li className="flex justify-between"><span>Timezone</span><span className="text-foreground">Asia/Dhaka (BDT)</span></li>
             </ul>
           </div>
