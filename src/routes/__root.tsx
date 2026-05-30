@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Shark-Ultimate Signal Bot" },
-      { name: "description", content: "Manual 1-minute forex signal scanner with TradingView chart and Bangladesh timezone." },
+      { title: "Shark-Ultimate" },
+      { name: "description", content: "Developed By Amirul_Adnan" },
       { name: "author", content: "Shark-Ultimate" },
-      { property: "og:title", content: "Shark-Ultimate Signal Bot" },
-      { property: "og:description", content: "Manual 1-minute forex signal scanner with live chart analysis." },
+      { property: "og:title", content: "Shark-Ultimate" },
+      { property: "og:description", content: "Developed By Amirul_Adnan" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Shark-Ultimate" },
+      { name: "twitter:description", content: "Developed By Amirul_Adnan" },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/bb26ecc2-dfe4-4ec2-9de7-cbf3c5c3ff1b" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/bb26ecc2-dfe4-4ec2-9de7-cbf3c5c3ff1b" },
     ],
     links: [
       {
