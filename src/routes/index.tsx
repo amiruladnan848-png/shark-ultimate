@@ -102,7 +102,7 @@ function Dashboard() {
               <li className="flex justify-between"><span>Data feed</span><span className="text-foreground">Yahoo Finance · live FX</span></li>
               <li className="flex justify-between"><span>Signal mode</span><span className="text-foreground inline-flex items-center gap-1"><ScanLine className="w-3 h-3 text-laser" /> Manual</span></li>
               <li className="flex justify-between"><span>Interval</span><span className="text-foreground">1 minute</span></li>
-              <li className="flex justify-between"><span>Indicators</span><span className="text-foreground">EMA9/21 · RSI14 · MOM</span></li>
+              <li className="flex justify-between"><span>Indicators</span><span className="text-foreground">EMA9/21/50 · MACD · RSI · STOCH · ADX · BB · MOM</span></li>
               <li className="flex justify-between"><span>Weekend</span><span className="text-foreground inline-flex items-center gap-1"><LockKeyhole className="w-3 h-3 text-laser" /> Locked</span></li>
               <li className="flex justify-between"><span>Timezone</span><span className="text-foreground">Asia/Dhaka (BDT)</span></li>
             </ul>
