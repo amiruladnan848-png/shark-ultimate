@@ -186,7 +186,7 @@ export function SignalPanel({ symbol, label, digits }: { symbol: string; label: 
             </div>
 
             <div className="grid grid-cols-3 gap-2 mb-4 text-center">
-              <Metric label="RSI" value={signal.rsi.toFixed(1)} tone={signal.rsi > 70 ? "bear" : signal.rsi < 30 ? "bull" : "neutral"} />
+              <Metric label="RSI" value={signal.rsi.toFixed(1)} tone={signal.rsi > 70 ? "bear" : signal.rsi < 30 ? "bull" : "laser"} />
               <Metric label="EMA9" value={formatPrice(signal.ema9, digits)} />
               <Metric label="MOM%" value={signal.momentum.toFixed(3)} tone={signal.momentum > 0 ? "bull" : "bear"} />
             </div>
@@ -201,8 +201,8 @@ export function SignalPanel({ symbol, label, digits }: { symbol: string; label: 
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "bull" | "bear" | "neutral" }) {
-  const c = tone === "bull" ? "text-bull" : tone === "bear" ? "text-bear" : tone === "neutral" ? "text-neutral" : "text-foreground";
+function Metric({ label, value, tone }: { label: string; value: string; tone?: "bull" | "bear" | "laser" }) {
+  const c = tone === "bull" ? "text-bull" : tone === "bear" ? "text-bear" : tone === "laser" ? "text-laser" : "text-foreground";
   return (
     <div className="glass rounded-xl py-2">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
