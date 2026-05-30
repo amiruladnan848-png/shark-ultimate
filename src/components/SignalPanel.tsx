@@ -1,39 +1,23 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useServerFn } from "@tanstack/react-start";
-import { TrendingUp, TrendingDown, Minus, Zap, Target, Shield, Activity } from "lucide-react";
-import { generateSignal, formatPrice, type Signal } from "@/lib/signals";
+import { TrendingUp, TrendingDown, Zap, Target, Shield, Activity, ScanLine, LockKeyhole } from "lucide-react";
+import { generateSignal, formatPrice, isBangladeshWeekend, type Signal, type ScanPhase } from "@/lib/signals";
 import { fetchYahooKlines } from "@/lib/market.functions";
 
 export function SignalPanel({ symbol, label, digits }: { symbol: string; label: string; digits: number }) {
   const [signal, setSignal] = useState<Signal | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [phase, setPhase] = useState<ScanPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(60);
+  const [locked, setLocked] = useState(() => isBangladeshWeekend());
   const fetchK = useServerFn(fetchYahooKlines);
 
   useEffect(() => {
-    let alive = true;
-    const run = async () => {
-      try {
-        const k = await fetchK({ data: { symbol } });
-        if (!alive) return;
-        if (!k.length) throw new Error("No market data");
-        setSignal(generateSignal(k));
-        setError(null);
-      } catch (e) {
-        if (alive) setError((e as Error).message);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    };
-    setLoading(true);
     setSignal(null);
     setError(null);
-    run();
-    const id = setInterval(run, 8000);
-    return () => { alive = false; clearInterval(id); };
-  }, [symbol, fetchK]);
+    setPhase(isBangladeshWeekend() ? "locked" : "idle");
+  }, [symbol]);
 
   useEffect(() => {
     const tick = () => setCountdown(60 - new Date().getSeconds());
@@ -42,12 +26,49 @@ export function SignalPanel({ symbol, label, digits }: { symbol: string; label: 
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    const syncLock = () => {
+      const next = isBangladeshWeekend();
+      setLocked(next);
+      if (next) {
+        setSignal(null);
+        setPhase("locked");
+      } else if (phase === "locked") {
+        setPhase("idle");
+      }
+    };
+    syncLock();
+    const id = setInterval(syncLock, 30000);
+    return () => clearInterval(id);
+  }, [phase]);
+
+  const scan = async () => {
+    if (locked || isBangladeshWeekend()) {
+      setSignal(null);
+      setError(null);
+      setPhase("locked");
+      return;
+    }
+    setPhase("scanning");
+    setError(null);
+    try {
+      const k = await fetchK({ data: { symbol } });
+      if (!k.length) throw new Error("Live market feed unavailable");
+      setSignal(generateSignal(k));
+      setPhase("ready");
+    } catch (e) {
+      setSignal(null);
+      setError((e as Error).message || "Signal scan failed");
+      setPhase("error");
+    }
+  };
+
   const dirColor =
     signal?.direction === "BUY" ? "text-bull" :
-    signal?.direction === "SELL" ? "text-bear" : "text-neutral";
+    signal?.direction === "SELL" ? "text-bear" : "text-laser";
   const DirIcon =
     signal?.direction === "BUY" ? TrendingUp :
-    signal?.direction === "SELL" ? TrendingDown : Minus;
+    signal?.direction === "SELL" ? TrendingDown : ScanLine;
 
   return (
     <div className="glass rounded-3xl p-5 relative overflow-hidden">
@@ -59,7 +80,7 @@ export function SignalPanel({ symbol, label, digits }: { symbol: string; label: 
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-bull animate-pulse" />
-          <span className="text-xs uppercase tracking-widest text-muted-foreground">Live Signal</span>
+          <span className="text-xs uppercase tracking-widest text-muted-foreground">Manual Signal Scanner</span>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Activity className="w-3 h-3" />
@@ -67,14 +88,41 @@ export function SignalPanel({ symbol, label, digits }: { symbol: string; label: 
         </div>
       </div>
 
-      {loading && !signal && (
+      <motion.button
+        whileTap={{ scale: 0.97 }}
+        onClick={scan}
+        disabled={phase === "scanning" || locked}
+        className="w-full mb-4 rounded-2xl shark-grad px-4 py-3 text-sm font-black uppercase tracking-[0.24em] text-primary-foreground shadow-laser disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className="inline-flex items-center justify-center gap-2">
+          {locked ? <LockKeyhole className="w-4 h-4" /> : <ScanLine className="w-4 h-4" />}
+          {locked ? "Weekend Locked" : phase === "scanning" ? "Laser Scanning" : "Signal Scan"}
+        </span>
+      </motion.button>
+
+      {phase === "scanning" && !signal && (
         <div className="py-10 flex flex-col items-center gap-3 text-muted-foreground">
           <Zap className="w-6 h-6 animate-pulse text-laser" />
-          <span className="text-sm">Laser-scanning {label}...</span>
+          <span className="text-sm">Laser-scanning {label} live 1m market...</span>
         </div>
       )}
 
-      {error && !loading && (
+      {phase === "locked" && (
+        <div className="py-8 text-center">
+          <LockKeyhole className="w-7 h-7 text-laser mx-auto mb-3" />
+          <div className="text-sm font-semibold text-foreground">Weekend Time Signal Engine Locked</div>
+          <div className="text-xs text-muted-foreground mt-1">Forex market scanning reopens with live weekday trading.</div>
+        </div>
+      )}
+
+      {phase === "idle" && !signal && (
+        <div className="py-8 text-center text-sm text-muted-foreground">
+          <ScanLine className="w-7 h-7 text-laser mx-auto mb-3 animate-pulse" />
+          Manual laser scanner standing by for {label}.
+        </div>
+      )}
+
+      {error && phase === "error" && (
         <div className="py-6 text-center text-sm text-destructive">{error}</div>
       )}
 
