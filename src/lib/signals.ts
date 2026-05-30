@@ -4,7 +4,7 @@ import type { Kline } from "./market.functions";
 export type { Kline };
 
 export type Signal = {
-  direction: "BUY" | "SELL" | "HOLD";
+  direction: "BUY" | "SELL";
   confidence: number;
   price: number;
   ema9: number;
@@ -16,6 +16,16 @@ export type Signal = {
   reason: string;
   ts: number;
 };
+
+export type ScanPhase = "idle" | "scanning" | "ready" | "locked" | "error";
+
+export function isBangladeshWeekend(date = new Date()) {
+  const day = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Dhaka",
+    weekday: "short",
+  }).format(date);
+  return day === "Sat" || day === "Sun";
+}
 
 const ema = (values: number[], period: number): number[] => {
   const k = 2 / (period + 1);
@@ -44,6 +54,7 @@ const rsi = (closes: number[], period = 14): number => {
 };
 
 export function generateSignal(klines: Kline[]): Signal {
+  if (klines.length < 30) throw new Error("Market feed warming up — scan again soon.");
   const closes = klines.map((k) => k.close);
   const price = closes[closes.length - 1];
   const e9arr = ema(closes, 9);
@@ -60,32 +71,38 @@ export function generateSignal(klines: Kline[]): Signal {
   const prevSpread = ((prevE9 - prevE21) / prevE21) * 100;
   const crossing = Math.sign(spread) !== Math.sign(prevSpread);
 
-  let direction: Signal["direction"] = "HOLD";
-  let confidence = 50;
-  let reason = "Market consolidating — waiting for clean setup.";
+  let direction: Signal["direction"] = spread >= 0 ? "BUY" : "SELL";
+  let confidence = 72;
+  let reason = "Laser scan selected the stronger one-minute market bias.";
 
   const bullish = spread > 0 && r > 50 && momentum > 0;
   const bearish = spread < 0 && r < 50 && momentum < 0;
 
   if (bullish) {
     direction = "BUY";
-    confidence = Math.min(98, 65 + Math.abs(spread) * 800 + (r - 50) * 0.6 + Math.abs(momentum) * 50);
+    confidence = Math.min(98, 72 + Math.abs(spread) * 900 + (r - 50) * 0.55 + Math.abs(momentum) * 55);
     reason = crossing
       ? "Fresh bullish EMA cross + RSI strength + positive momentum."
       : "EMA9 above EMA21, RSI > 50, momentum positive — uptrend continuation.";
   } else if (bearish) {
     direction = "SELL";
-    confidence = Math.min(98, 65 + Math.abs(spread) * 800 + (50 - r) * 0.6 + Math.abs(momentum) * 50);
+    confidence = Math.min(98, 72 + Math.abs(spread) * 900 + (50 - r) * 0.55 + Math.abs(momentum) * 55);
     reason = crossing
       ? "Fresh bearish EMA cross + RSI weakness + negative momentum."
       : "EMA9 below EMA21, RSI < 50, momentum negative — downtrend continuation.";
   } else {
-    confidence = 48 + Math.random() * 6;
+    const buyScore = Math.max(0, spread) * 900 + Math.max(0, r - 50) * 0.45 + Math.max(0, momentum) * 55;
+    const sellScore = Math.max(0, -spread) * 900 + Math.max(0, 50 - r) * 0.45 + Math.max(0, -momentum) * 55;
+    direction = buyScore >= sellScore ? "BUY" : "SELL";
+    confidence = Math.min(88, 68 + Math.abs(buyScore - sellScore) + Math.abs(momentum) * 35);
+    reason = direction === "BUY"
+      ? "Mixed market, but EMA pressure and price action favor a controlled BUY setup."
+      : "Mixed market, but EMA pressure and price action favor a controlled SELL setup.";
   }
 
   const atr = klines.slice(-14).reduce((s, k) => s + (k.high - k.low), 0) / Math.max(1, Math.min(14, klines.length));
-  const target = direction === "BUY" ? price + atr * 1.2 : direction === "SELL" ? price - atr * 1.2 : price;
-  const stop = direction === "BUY" ? price - atr * 0.8 : direction === "SELL" ? price + atr * 0.8 : price;
+  const target = direction === "BUY" ? price + atr * 1.2 : price - atr * 1.2;
+  const stop = direction === "BUY" ? price - atr * 0.8 : price + atr * 0.8;
 
   return {
     direction,
