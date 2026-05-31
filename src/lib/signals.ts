@@ -85,11 +85,11 @@ const macd = (closes: number[]) => {
   const e12 = ema(closes, 12);
   const e26 = ema(closes, 26);
   const line = closes.map((_, i) => e12[i] - e26[i]);
-  const signal = ema(line.slice(-Math.min(line.length, 60)), 9);
+  const signal = ema(line, 9);
   return {
-    macd: line[line.length - 1],
-    signal: signal[signal.length - 1],
-    hist: line[line.length - 1] - signal[signal.length - 1],
+    macd: line.at(-1)!,
+    signal: signal.at(-1)!,
+    hist: line.at(-1)! - signal.at(-1)!,
   };
 };
 
@@ -132,7 +132,7 @@ const bollinger = (closes: number[], period = 20, mult = 2) => {
 
 // ---------- next 1-min candle open (BDT-aware via UTC) ----------
 function nextMinuteOpen(now = Date.now()) {
-  return Math.ceil(now / 60000) * 60000;
+  return Math.floor(now / 60000) * 60000 + 60000;
 }
 
 export function formatBDTime(ts: number) {
