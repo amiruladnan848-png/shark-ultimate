@@ -223,21 +223,42 @@ export function generateSignal(klines: Kline[]): Signal {
   };
 }
 
-// Real popular forex pairs — prices sourced from Yahoo Finance.
-export const PAIRS = [
-  { symbol: "EURUSD=X", label: "EUR / USD", tv: "FX:EURUSD", digits: 5 },
-  { symbol: "GBPUSD=X", label: "GBP / USD", tv: "FX:GBPUSD", digits: 5 },
-  { symbol: "JPY=X",    label: "USD / JPY", tv: "FX:USDJPY", digits: 3 },
-  { symbol: "CHF=X",    label: "USD / CHF", tv: "FX:USDCHF", digits: 5 },
-  { symbol: "AUDUSD=X", label: "AUD / USD", tv: "FX:AUDUSD", digits: 5 },
-  { symbol: "CAD=X",    label: "USD / CAD", tv: "FX:USDCAD", digits: 5 },
-  { symbol: "NZDUSD=X", label: "NZD / USD", tv: "FX:NZDUSD", digits: 5 },
-  { symbol: "EURGBP=X", label: "EUR / GBP", tv: "FX:EURGBP", digits: 5 },
-  { symbol: "EURJPY=X", label: "EUR / JPY", tv: "FX:EURJPY", digits: 3 },
-  { symbol: "GBPJPY=X", label: "GBP / JPY", tv: "FX:GBPJPY", digits: 3 },
-] as const;
+// Popular forex pairs (Yahoo Finance) + top crypto pairs (Binance public API, 24/7).
+export type PairKind = "forex" | "crypto";
+export type PairSource = "yahoo" | "binance";
 
-export type PairSymbol = (typeof PAIRS)[number]["symbol"];
+export type Pair = {
+  symbol: string;
+  label: string;
+  tv: string;
+  digits: number;
+  kind: PairKind;
+  source: PairSource;
+};
+
+export const PAIRS: readonly Pair[] = [
+  // Forex (weekday)
+  { symbol: "EURUSD=X", label: "EUR / USD", tv: "FX:EURUSD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "GBPUSD=X", label: "GBP / USD", tv: "FX:GBPUSD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "JPY=X",    label: "USD / JPY", tv: "FX:USDJPY", digits: 3, kind: "forex", source: "yahoo" },
+  { symbol: "CHF=X",    label: "USD / CHF", tv: "FX:USDCHF", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "AUDUSD=X", label: "AUD / USD", tv: "FX:AUDUSD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "CAD=X",    label: "USD / CAD", tv: "FX:USDCAD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "NZDUSD=X", label: "NZD / USD", tv: "FX:NZDUSD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "EURJPY=X", label: "EUR / JPY", tv: "FX:EURJPY", digits: 3, kind: "forex", source: "yahoo" },
+  { symbol: "GBPJPY=X", label: "GBP / JPY", tv: "FX:GBPJPY", digits: 3, kind: "forex", source: "yahoo" },
+  // Crypto (24/7) — Binance public API
+  { symbol: "BTCUSDT",  label: "BTC / USDT",  tv: "BINANCE:BTCUSDT",  digits: 2, kind: "crypto", source: "binance" },
+  { symbol: "ETHUSDT",  label: "ETH / USDT",  tv: "BINANCE:ETHUSDT",  digits: 2, kind: "crypto", source: "binance" },
+  { symbol: "BNBUSDT",  label: "BNB / USDT",  tv: "BINANCE:BNBUSDT",  digits: 2, kind: "crypto", source: "binance" },
+  { symbol: "SOLUSDT",  label: "SOL / USDT",  tv: "BINANCE:SOLUSDT",  digits: 2, kind: "crypto", source: "binance" },
+  { symbol: "XRPUSDT",  label: "XRP / USDT",  tv: "BINANCE:XRPUSDT",  digits: 4, kind: "crypto", source: "binance" },
+  { symbol: "ADAUSDT",  label: "ADA / USDT",  tv: "BINANCE:ADAUSDT",  digits: 4, kind: "crypto", source: "binance" },
+  { symbol: "DOGEUSDT", label: "DOGE / USDT", tv: "BINANCE:DOGEUSDT", digits: 5, kind: "crypto", source: "binance" },
+  { symbol: "AVAXUSDT", label: "AVAX / USDT", tv: "BINANCE:AVAXUSDT", digits: 3, kind: "crypto", source: "binance" },
+];
+
+export type PairSymbol = string;
 
 export function formatPrice(n: number, digits: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
