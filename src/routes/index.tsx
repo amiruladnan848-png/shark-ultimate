@@ -94,7 +94,7 @@ function Dashboard() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.2 }}
         >
-          <SignalPanel symbol={active.symbol} label={active.label} digits={active.digits} />
+          <SignalPanel symbol={active.symbol} label={active.label} digits={active.digits} kind={active.kind} source={active.source} />
 
           <div className="glass rounded-3xl p-4 mt-4">
             <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Engine</div>

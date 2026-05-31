@@ -2,23 +2,25 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useServerFn } from "@tanstack/react-start";
 import { TrendingUp, TrendingDown, Zap, Target, Shield, Activity, ScanLine, LockKeyhole, Timer, Clock } from "lucide-react";
-import { generateSignal, formatPrice, formatBDTime, isBangladeshWeekend, type Signal, type ScanPhase } from "@/lib/signals";
-import { fetchYahooKlines } from "@/lib/market.functions";
+import { generateSignal, formatPrice, formatBDTime, isBangladeshWeekend, type Signal, type ScanPhase, type PairKind, type PairSource } from "@/lib/signals";
+import { fetchKlines } from "@/lib/market.functions";
 
-export function SignalPanel({ symbol, label, digits }: { symbol: string; label: string; digits: number }) {
+export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: string; label: string; digits: number; kind: PairKind; source: PairSource }) {
   const [signal, setSignal] = useState<Signal | null>(null);
   const [phase, setPhase] = useState<ScanPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(60);
   const [entryLeft, setEntryLeft] = useState<number>(0);
-  const [locked, setLocked] = useState(() => isBangladeshWeekend());
-  const fetchK = useServerFn(fetchYahooKlines);
+  const [locked, setLocked] = useState(() => kind === "forex" && isBangladeshWeekend());
+  const fetchK = useServerFn(fetchKlines);
 
   useEffect(() => {
     setSignal(null);
     setError(null);
-    setPhase(isBangladeshWeekend() ? "locked" : "idle");
-  }, [symbol]);
+    const forexLocked = kind === "forex" && isBangladeshWeekend();
+    setLocked(forexLocked);
+    setPhase(forexLocked ? "locked" : "idle");
+  }, [symbol, kind]);
 
   useEffect(() => {
     const tick = () => setCountdown(60 - new Date().getSeconds());
@@ -36,6 +38,11 @@ export function SignalPanel({ symbol, label, digits }: { symbol: string; label: 
   }, [signal]);
 
   useEffect(() => {
+    if (kind !== "forex") {
+      setLocked(false);
+      if (phase === "locked") setPhase("idle");
+      return;
+    }
     const syncLock = () => {
       const next = isBangladeshWeekend();
       setLocked(next);
@@ -49,16 +56,16 @@ export function SignalPanel({ symbol, label, digits }: { symbol: string; label: 
     syncLock();
     const id = setInterval(syncLock, 30000);
     return () => clearInterval(id);
-  }, [phase]);
+  }, [phase, kind]);
 
   const scan = async () => {
-    if (locked || isBangladeshWeekend()) {
-      setSignal(null); setError(null); setPhase("locked"); return;
+    if (kind === "forex" && isBangladeshWeekend()) {
+      setSignal(null); setError(null); setPhase("locked"); setLocked(true); return;
     }
     setPhase("scanning");
     setError(null);
     try {
-      const k = await fetchK({ data: { symbol } });
+      const k = await fetchK({ data: { symbol, source } });
       if (!k.length) throw new Error("Live market feed unavailable");
       setSignal(generateSignal(k));
       setPhase("ready");
@@ -68,6 +75,7 @@ export function SignalPanel({ symbol, label, digits }: { symbol: string; label: 
       setPhase("error");
     }
   };
+
 
   const isBuy = signal?.direction === "BUY";
   const dirColor = isBuy ? "text-bull" : signal?.direction === "SELL" ? "text-bear" : "text-laser";

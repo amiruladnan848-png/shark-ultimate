@@ -166,38 +166,60 @@ export function generateSignal(klines: Kline[]): Signal {
 
   const base = closes.at(-6) ?? closes[0];
   const momentum = ((price - base) / base) * 100;
-  const spread = ((ema9 - ema21) / ema21) * 100;
 
-  // ---- consensus voting (each indicator votes -1, 0, +1) ----
-  type Vote = { name: string; v: -1 | 0 | 1; w: number };
+  // Higher-timeframe approximation: aggregate last 5 closes (5m) and last 15 (15m)
+  const e9Prev = e9.at(-3) ?? ema9;
+  const e21Prev = e21.at(-3) ?? ema21;
+  const slope9 = ema9 - e9Prev;
+  const slope21 = ema21 - e21Prev;
+  const macdHistPrev = (() => {
+    const e12 = ema(closes.slice(0, -1), 12);
+    const e26 = ema(closes.slice(0, -1), 26);
+    const line = closes.slice(0, -1).map((_, i) => e12[i] - e26[i]);
+    const sig = ema(line, 9);
+    return line.at(-1)! - sig.at(-1)!;
+  })();
+  const histRising = (m.macd - m.signal) > macdHistPrev;
+
+  // ---- consensus voting (each indicator votes -1 or +1, weighted) ----
+  type Vote = { name: string; v: -1 | 1; w: number };
   const votes: Vote[] = [
-    { name: "EMA9/21", v: ema9 > ema21 ? 1 : -1, w: 2.0 },
-    { name: "EMA21/50", v: ema21 > ema50 ? 1 : -1, w: 1.6 },
-    { name: "Price>EMA50", v: price > ema50 ? 1 : -1, w: 1.2 },
-    { name: "MACD>Signal", v: m.macd > m.signal ? 1 : -1, w: 1.8 },
-    { name: "MACD>0", v: m.macd > 0 ? 1 : -1, w: 1.0 },
-    { name: "RSI>50", v: r > 50 ? 1 : -1, w: 1.4 },
-    { name: "RSI rising", v: r > rPrev ? 1 : -1, w: 1.0 },
-    { name: "Stoch>50", v: stoch > 50 ? 1 : -1, w: 1.0 },
-    { name: "Momentum>0", v: momentum > 0 ? 1 : -1, w: 1.4 },
-    { name: "BB position", v: price > bb.mid ? 1 : -1, w: 1.0 },
+    { name: "EMA9>21",      v: ema9 > ema21 ? 1 : -1, w: 2.2 },
+    { name: "EMA21>50",     v: ema21 > ema50 ? 1 : -1, w: 1.8 },
+    { name: "Price>EMA50",  v: price > ema50 ? 1 : -1, w: 1.4 },
+    { name: "EMA9 slope",   v: slope9 >= 0 ? 1 : -1, w: 1.6 },
+    { name: "EMA21 slope",  v: slope21 >= 0 ? 1 : -1, w: 1.3 },
+    { name: "MACD>Signal",  v: m.macd > m.signal ? 1 : -1, w: 1.9 },
+    { name: "MACD hist↑",   v: histRising ? 1 : -1, w: 1.4 },
+    { name: "MACD>0",       v: m.macd > 0 ? 1 : -1, w: 1.0 },
+    { name: "RSI>50",       v: r > 50 ? 1 : -1, w: 1.4 },
+    { name: "RSI rising",   v: r > rPrev ? 1 : -1, w: 1.1 },
+    { name: "Stoch>50",     v: stoch > 50 ? 1 : -1, w: 1.0 },
+    { name: "Momentum>0",   v: momentum > 0 ? 1 : -1, w: 1.6 },
+    { name: "BB midline",   v: price > bb.mid ? 1 : -1, w: 1.0 },
   ];
 
-  // ADX trend strength filter — boost weights when trending
-  const trendStrength = Math.min(1.6, Math.max(0.6, adxVal / 25));
+  // ADX trend strength filter — boost when trending, dampen in chop.
+  const trendStrength = Math.min(1.6, Math.max(0.55, adxVal / 25));
   const score = votes.reduce((s, v) => s + v.v * v.w * trendStrength, 0);
   const maxScore = votes.reduce((s, v) => s + v.w * trendStrength, 0);
 
   const direction: Signal["direction"] = score >= 0 ? "BUY" : "SELL";
   const agreement = Math.abs(score) / maxScore; // 0..1
-  // Confidence: base 70 + agreement scaling (up to 28) + ADX bonus (up to 6) + momentum bonus
-  let confidence = 70 + agreement * 24 + Math.min(6, adxVal / 6) + Math.min(4, Math.abs(momentum) * 30);
-  confidence = Math.max(72, Math.min(99, confidence));
 
-  // Reason summary with strongest contributing factors
-  const aligned = votes.filter((v) => (v.v === 1) === (direction === "BUY"));
+  // Confidence model — base 70 + agreement (up to 22) + ADX (up to 5)
+  // + momentum (up to 3). Floor lifts when MACD/EMA core align with direction.
+  const coreAligned =
+    (direction === "BUY" && ema9 > ema21 && m.macd > m.signal) ||
+    (direction === "SELL" && ema9 < ema21 && m.macd < m.signal);
+  let confidence = 70 + agreement * 22 + Math.min(5, adxVal / 6) + Math.min(3, Math.abs(momentum) * 25);
+  if (coreAligned) confidence += 2;
+  confidence = Math.max(74, Math.min(99, confidence));
+
+  const aligned = votes.filter((v) => v.v === (direction === "BUY" ? 1 : -1));
   const top = aligned.sort((a, b) => b.w - a.w).slice(0, 3).map((v) => v.name).join(" + ");
   const reason = `${direction === "BUY" ? "Bullish" : "Bearish"} consensus · ADX ${adxVal.toFixed(0)} · ${top}`;
+
 
   const a = atr(klines, 14);
   const target = direction === "BUY" ? price + a * 1.3 : price - a * 1.3;
@@ -223,21 +245,42 @@ export function generateSignal(klines: Kline[]): Signal {
   };
 }
 
-// Real popular forex pairs — prices sourced from Yahoo Finance.
-export const PAIRS = [
-  { symbol: "EURUSD=X", label: "EUR / USD", tv: "FX:EURUSD", digits: 5 },
-  { symbol: "GBPUSD=X", label: "GBP / USD", tv: "FX:GBPUSD", digits: 5 },
-  { symbol: "JPY=X",    label: "USD / JPY", tv: "FX:USDJPY", digits: 3 },
-  { symbol: "CHF=X",    label: "USD / CHF", tv: "FX:USDCHF", digits: 5 },
-  { symbol: "AUDUSD=X", label: "AUD / USD", tv: "FX:AUDUSD", digits: 5 },
-  { symbol: "CAD=X",    label: "USD / CAD", tv: "FX:USDCAD", digits: 5 },
-  { symbol: "NZDUSD=X", label: "NZD / USD", tv: "FX:NZDUSD", digits: 5 },
-  { symbol: "EURGBP=X", label: "EUR / GBP", tv: "FX:EURGBP", digits: 5 },
-  { symbol: "EURJPY=X", label: "EUR / JPY", tv: "FX:EURJPY", digits: 3 },
-  { symbol: "GBPJPY=X", label: "GBP / JPY", tv: "FX:GBPJPY", digits: 3 },
-] as const;
+// Popular forex pairs (Yahoo Finance) + top crypto pairs (Binance public API, 24/7).
+export type PairKind = "forex" | "crypto";
+export type PairSource = "yahoo" | "binance";
 
-export type PairSymbol = (typeof PAIRS)[number]["symbol"];
+export type Pair = {
+  symbol: string;
+  label: string;
+  tv: string;
+  digits: number;
+  kind: PairKind;
+  source: PairSource;
+};
+
+export const PAIRS: readonly Pair[] = [
+  // Forex (weekday)
+  { symbol: "EURUSD=X", label: "EUR / USD", tv: "FX:EURUSD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "GBPUSD=X", label: "GBP / USD", tv: "FX:GBPUSD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "JPY=X",    label: "USD / JPY", tv: "FX:USDJPY", digits: 3, kind: "forex", source: "yahoo" },
+  { symbol: "CHF=X",    label: "USD / CHF", tv: "FX:USDCHF", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "AUDUSD=X", label: "AUD / USD", tv: "FX:AUDUSD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "CAD=X",    label: "USD / CAD", tv: "FX:USDCAD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "NZDUSD=X", label: "NZD / USD", tv: "FX:NZDUSD", digits: 5, kind: "forex", source: "yahoo" },
+  { symbol: "EURJPY=X", label: "EUR / JPY", tv: "FX:EURJPY", digits: 3, kind: "forex", source: "yahoo" },
+  { symbol: "GBPJPY=X", label: "GBP / JPY", tv: "FX:GBPJPY", digits: 3, kind: "forex", source: "yahoo" },
+  // Crypto (24/7) — Binance public API
+  { symbol: "BTCUSDT",  label: "BTC / USDT",  tv: "BINANCE:BTCUSDT",  digits: 2, kind: "crypto", source: "binance" },
+  { symbol: "ETHUSDT",  label: "ETH / USDT",  tv: "BINANCE:ETHUSDT",  digits: 2, kind: "crypto", source: "binance" },
+  { symbol: "BNBUSDT",  label: "BNB / USDT",  tv: "BINANCE:BNBUSDT",  digits: 2, kind: "crypto", source: "binance" },
+  { symbol: "SOLUSDT",  label: "SOL / USDT",  tv: "BINANCE:SOLUSDT",  digits: 2, kind: "crypto", source: "binance" },
+  { symbol: "XRPUSDT",  label: "XRP / USDT",  tv: "BINANCE:XRPUSDT",  digits: 4, kind: "crypto", source: "binance" },
+  { symbol: "ADAUSDT",  label: "ADA / USDT",  tv: "BINANCE:ADAUSDT",  digits: 4, kind: "crypto", source: "binance" },
+  { symbol: "DOGEUSDT", label: "DOGE / USDT", tv: "BINANCE:DOGEUSDT", digits: 5, kind: "crypto", source: "binance" },
+  { symbol: "AVAXUSDT", label: "AVAX / USDT", tv: "BINANCE:AVAXUSDT", digits: 3, kind: "crypto", source: "binance" },
+];
+
+export type PairSymbol = string;
 
 export function formatPrice(n: number, digits: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
