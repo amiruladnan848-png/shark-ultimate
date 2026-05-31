@@ -85,11 +85,11 @@ const macd = (closes: number[]) => {
   const e12 = ema(closes, 12);
   const e26 = ema(closes, 26);
   const line = closes.map((_, i) => e12[i] - e26[i]);
-  const signal = ema(line.slice(-Math.min(line.length, 60)), 9);
+  const signal = ema(line, 9);
   return {
-    macd: line[line.length - 1],
-    signal: signal[signal.length - 1],
-    hist: line[line.length - 1] - signal[signal.length - 1],
+    macd: line.at(-1)!,
+    signal: signal.at(-1)!,
+    hist: line.at(-1)! - signal.at(-1)!,
   };
 };
 
