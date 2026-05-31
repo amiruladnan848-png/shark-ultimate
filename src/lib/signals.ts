@@ -132,7 +132,7 @@ const bollinger = (closes: number[], period = 20, mult = 2) => {
 
 // ---------- next 1-min candle open (BDT-aware via UTC) ----------
 function nextMinuteOpen(now = Date.now()) {
-  return Math.ceil(now / 60000) * 60000;
+  return Math.floor(now / 60000) * 60000 + 60000;
 }
 
 export function formatBDTime(ts: number) {
