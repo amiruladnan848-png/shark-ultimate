@@ -2,17 +2,17 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useServerFn } from "@tanstack/react-start";
 import { TrendingUp, TrendingDown, Zap, Target, Shield, Activity, ScanLine, LockKeyhole, Timer, Clock } from "lucide-react";
-import { generateSignal, formatPrice, formatBDTime, isBangladeshWeekend, type Signal, type ScanPhase } from "@/lib/signals";
-import { fetchYahooKlines } from "@/lib/market.functions";
+import { generateSignal, formatPrice, formatBDTime, isBangladeshWeekend, type Signal, type ScanPhase, type PairKind, type PairSource } from "@/lib/signals";
+import { fetchKlines } from "@/lib/market.functions";
 
-export function SignalPanel({ symbol, label, digits }: { symbol: string; label: string; digits: number }) {
+export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: string; label: string; digits: number; kind: PairKind; source: PairSource }) {
   const [signal, setSignal] = useState<Signal | null>(null);
   const [phase, setPhase] = useState<ScanPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(60);
   const [entryLeft, setEntryLeft] = useState<number>(0);
-  const [locked, setLocked] = useState(() => isBangladeshWeekend());
-  const fetchK = useServerFn(fetchYahooKlines);
+  const [locked, setLocked] = useState(() => kind === "forex" && isBangladeshWeekend());
+  const fetchK = useServerFn(fetchKlines);
 
   useEffect(() => {
     setSignal(null);
