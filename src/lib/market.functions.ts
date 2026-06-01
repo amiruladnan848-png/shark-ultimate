@@ -18,16 +18,21 @@ const YAHOO_HEADERS = {
 };
 
 const yahooUrl = (symbol: string) =>
-  `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=5d`;
+  `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d`;
 
 const yahooBackupUrl = (symbol: string) =>
-  `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=5d`;
+  `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d`;
 
 const binanceKlineUrl = (symbol: string) =>
   `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=300`;
 
 const binanceTickerUrl = (symbol: string) =>
   `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(symbol)}`;
+
+const stooqSymbol = (symbol: string) => symbol.replace("=X", "").toLowerCase();
+
+const stooqQuoteUrl = (symbol: string) =>
+  `https://stooq.com/q/l/?s=${encodeURIComponent(stooqSymbol(symbol))}&f=sd2t2ohlcv&h&e=csv`;
 
 const isYahoo = (s: string) => /^[A-Z]{3,6}=X$/.test(s);
 const isBinance = (s: string) => /^[A-Z0-9]{5,20}$/.test(s);
@@ -114,6 +119,17 @@ export const fetchKlines = createServerFn({ method: "GET" })
 type QuoteInput = { symbol: string; source: MarketSource };
 
 async function fetchYahooQuoteRaw(symbol: string) {
+  const stooq = await fetch(stooqQuoteUrl(symbol), { headers: YAHOO_HEADERS });
+  if (stooq.ok) {
+    const text = await stooq.text();
+    const row = text.trim().split("\n")[1]?.split(",");
+    const price = row ? parseFloat(row[6]) : NaN;
+    const open = row ? parseFloat(row[3]) : NaN;
+    if (Number.isFinite(price)) {
+      const previous = Number.isFinite(open) && open > 0 ? open : price;
+      return { symbol, price, change: previous === 0 ? 0 : ((price - previous) / previous) * 100 };
+    }
+  }
   const res = await fetch(yahooUrl(symbol), { headers: YAHOO_HEADERS });
   if (!res.ok) return null;
   const j = (await res.json()) as {
