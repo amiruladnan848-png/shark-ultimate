@@ -18,10 +18,13 @@ const YAHOO_HEADERS = {
 };
 
 const yahooUrl = (symbol: string) =>
-  `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d`;
+  `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=5d`;
+
+const yahooBackupUrl = (symbol: string) =>
+  `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=5d`;
 
 const binanceKlineUrl = (symbol: string) =>
-  `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=200`;
+  `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&limit=300`;
 
 const binanceTickerUrl = (symbol: string) =>
   `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(symbol)}`;
@@ -30,7 +33,8 @@ const isYahoo = (s: string) => /^[A-Z]{3,6}=X$/.test(s);
 const isBinance = (s: string) => /^[A-Z0-9]{5,20}$/.test(s);
 
 async function fetchYahooKlinesRaw(symbol: string): Promise<Kline[]> {
-  const res = await fetch(yahooUrl(symbol), { headers: YAHOO_HEADERS });
+  let res = await fetch(yahooUrl(symbol), { headers: YAHOO_HEADERS });
+  if (!res.ok) res = await fetch(yahooBackupUrl(symbol), { headers: YAHOO_HEADERS });
   if (!res.ok) throw new Error(`Forex feed error (${res.status})`);
   const json = (await res.json()) as {
     chart: {
@@ -56,16 +60,20 @@ async function fetchYahooKlinesRaw(symbol: string): Promise<Kline[]> {
   for (let i = 0; i < r.timestamp.length; i++) {
     const c = q.close[i];
     if (c == null || !Number.isFinite(c)) continue;
+    const open = q.open[i] ?? c;
+    const high = q.high[i] ?? c;
+    const low = q.low[i] ?? c;
+    if (![open, high, low].every(Number.isFinite)) continue;
     out.push({
       openTime: r.timestamp[i] * 1000,
-      open: q.open[i] ?? c,
-      high: q.high[i] ?? c,
-      low: q.low[i] ?? c,
+      open,
+      high: Math.max(high, open, c),
+      low: Math.min(low, open, c),
       close: c,
       volume: q.volume[i] ?? 0,
     });
   }
-  return out.slice(-180);
+  return out.sort((a, b) => a.openTime - b.openTime).slice(-260);
 }
 
 async function fetchBinanceKlinesRaw(symbol: string): Promise<Kline[]> {
@@ -74,14 +82,17 @@ async function fetchBinanceKlinesRaw(symbol: string): Promise<Kline[]> {
   const arr = (await res.json()) as Array<
     [number, string, string, string, string, string, number, string, number, string, string, string]
   >;
-  return arr.map((k) => ({
-    openTime: k[0],
-    open: parseFloat(k[1]),
-    high: parseFloat(k[2]),
-    low: parseFloat(k[3]),
-    close: parseFloat(k[4]),
-    volume: parseFloat(k[5]),
-  }));
+  return arr
+    .map((k) => ({
+      openTime: k[0],
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5]),
+    }))
+    .filter((k) => [k.open, k.high, k.low, k.close, k.volume].every(Number.isFinite))
+    .sort((a, b) => a.openTime - b.openTime);
 }
 
 export const fetchKlines = createServerFn({ method: "GET" })
@@ -94,8 +105,9 @@ export const fetchKlines = createServerFn({ method: "GET" })
     const out = data.source === "binance"
       ? await fetchBinanceKlinesRaw(data.symbol)
       : await fetchYahooKlinesRaw(data.symbol);
-    if (out.length < 30) throw new Error("Live market feed warming up");
-    return out;
+    const clean = out.filter((k) => k.close > 0 && k.high >= k.low);
+    if (clean.length < 80) throw new Error("Live market feed warming up");
+    return clean;
   });
 
 type QuoteInput = { symbol: string; source: MarketSource };
