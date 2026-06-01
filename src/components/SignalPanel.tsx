@@ -32,7 +32,12 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
   useEffect(() => {
     if (!signal) return;
     const id = setInterval(() => {
-      setEntryLeft(Math.max(0, signal.expiresAt - Date.now()));
+      const left = Math.max(0, signal.expiresAt - Date.now());
+      setEntryLeft(left);
+      if (left <= 0) {
+        setSignal(null);
+        setPhase("idle");
+      }
     }, 250);
     return () => clearInterval(id);
   }, [signal]);
@@ -188,7 +193,7 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
               </div>
               <div className="glass rounded-xl p-3">
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
-                  <Timer className="w-3 h-3 text-laser" /> Expires in
+                  <Timer className="w-3 h-3 text-laser" /> Window closes
                 </div>
                 <div className={`font-mono text-sm ${expirySec <= 10 ? "text-bear" : "text-foreground"}`}>{expirySec}s</div>
               </div>
