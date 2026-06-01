@@ -264,7 +264,7 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
   return (
     <div className="glass rounded-xl py-2">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className={`font-mono text-sm ${c}`}>{value}</div>
+      <div className={`font-mono text-xs sm:text-sm truncate px-1 ${c}`}>{value}</div>
     </div>
   );
 }
