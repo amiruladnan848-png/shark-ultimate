@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useServerFn } from "@tanstack/react-start";
-import { TrendingUp, TrendingDown, Zap, Target, Shield, Activity, ScanLine, LockKeyhole, Timer, Clock } from "lucide-react";
+import { TrendingUp, TrendingDown, Zap, Target, Shield, Activity, ScanLine, LockKeyhole, Timer, Clock, Gauge, BadgeCheck } from "lucide-react";
 import { generateSignal, formatPrice, formatBDTime, isBangladeshWeekend, type Signal, type ScanPhase, type PairKind, type PairSource } from "@/lib/signals";
 import { fetchKlines } from "@/lib/market.functions";
 
@@ -67,7 +67,9 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
     try {
       const k = await fetchK({ data: { symbol, source } });
       if (!k.length) throw new Error("Live market feed unavailable");
-      setSignal(generateSignal(k));
+      const nextSignal = generateSignal(k);
+      setSignal(nextSignal);
+      setEntryLeft(Math.max(0, nextSignal.expiresAt - Date.now()));
       setPhase("ready");
     } catch (e) {
       setSignal(null);
@@ -82,7 +84,8 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
   const dirShadow = isBuy ? "shadow-bull" : signal?.direction === "SELL" ? "shadow-bear" : "shadow-laser";
   const DirIcon = isBuy ? TrendingUp : signal?.direction === "SELL" ? TrendingDown : ScanLine;
 
-  const entrySec = Math.ceil(entryLeft / 1000);
+  const expirySec = Math.ceil(entryLeft / 1000);
+  const entrySec = signal ? Math.max(0, Math.ceil((signal.entryAt - Date.now()) / 1000)) : 0;
 
   return (
     <div className="glass-strong rounded-3xl p-5 relative overflow-hidden lift">
@@ -91,12 +94,12 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
         <div className="absolute inset-x-0 h-px bg-gradient-to-r from-transparent via-laser to-transparent animate-scan" />
       </div>
 
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-3">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-bull animate-pulse" />
           <span className="text-xs uppercase tracking-widest text-muted-foreground">Laser Signal Scanner</span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
           <Activity className="w-3 h-3" />
           Next bar <span className="text-foreground font-mono w-5 text-right">{countdown}s</span>
         </div>
@@ -181,18 +184,25 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
                   <Clock className="w-3 h-3 text-laser" /> Entry (BDT)
                 </div>
                 <div className="font-mono text-sm text-foreground">{formatBDTime(signal.entryAt)}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{entrySec > 0 ? `Starts in ${entrySec}s` : "Live candle active"}</div>
               </div>
               <div className="glass rounded-xl p-3">
                 <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
                   <Timer className="w-3 h-3 text-laser" /> Expires in
                 </div>
-                <div className={`font-mono text-sm ${entrySec <= 10 ? "text-bear" : "text-foreground"}`}>{entrySec}s</div>
+                <div className={`font-mono text-sm ${expirySec <= 10 ? "text-bear" : "text-foreground"}`}>{expirySec}s</div>
               </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-4 text-center">
+              <Metric label="BOOSTER" value={`${signal.booster}%`} tone={signal.booster >= 85 ? "bull" : "laser"} />
+              <Metric label="GRADE" value={signal.quality} tone={signal.quality === "A+" ? "bull" : "laser"} />
+              <Metric label="SESSION" value={signal.session.replace(" session", "").toUpperCase()} tone="laser" />
             </div>
 
             <div className="mb-4">
               <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-muted-foreground">Accuracy Confidence</span>
+                <span className="text-muted-foreground inline-flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-laser" /> Accuracy Confidence</span>
                 <span className={`font-mono font-bold ${dirColor}`}>{signal.confidence}%</span>
               </div>
               <div className="h-2.5 rounded-full bg-secondary overflow-hidden relative">
@@ -234,6 +244,7 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
             </div>
 
             <div className="text-xs text-muted-foreground leading-relaxed border-l-2 border-laser/60 pl-3">
+              <Gauge className="inline w-3 h-3 text-laser mr-1" />
               {signal.reason}
             </div>
           </motion.div>
