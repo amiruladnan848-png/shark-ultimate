@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { BadgeCheck, Gauge, LockKeyhole, Radar, ScanLine, ShieldCheck, Zap } from "lucide-react";
 import { PinLock } from "@/components/PinLock";
@@ -135,7 +135,7 @@ function Dashboard() {
   );
 }
 
-function StatusTile({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function StatusTile({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="glass rounded-2xl px-3 py-3 professional-frame">
       <div className="flex items-center gap-2 text-laser mb-1">{icon}<span className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span></div>
