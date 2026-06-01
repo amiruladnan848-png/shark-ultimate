@@ -133,6 +133,47 @@ const bollinger = (closes: number[], period = 20, mult = 2) => {
   return { mid: mean, upper: mean + mult * sd, lower: mean - mult * sd };
 };
 
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+
+const slope = (values: number[], lookback: number) => {
+  const last = values.at(-1) ?? 0;
+  const prev = values.at(-lookback) ?? values[0] ?? last;
+  return last - prev;
+};
+
+const aggregateKlines = (klines: Kline[], minutes: number): Kline[] => {
+  const bucket = minutes * 60000;
+  const out: Kline[] = [];
+  for (const k of klines) {
+    const t = Math.floor(k.openTime / bucket) * bucket;
+    const last = out.at(-1);
+    if (!last || last.openTime !== t) {
+      out.push({ ...k, openTime: t });
+    } else {
+      last.high = Math.max(last.high, k.high);
+      last.low = Math.min(last.low, k.low);
+      last.close = k.close;
+      last.volume += k.volume;
+    }
+  }
+  return out;
+};
+
+const vwap = (klines: Kline[], period = 30) => {
+  const slice = klines.slice(-period);
+  const pv = slice.reduce((s, k) => s + ((k.high + k.low + k.close) / 3) * Math.max(1, k.volume), 0);
+  const vv = slice.reduce((s, k) => s + Math.max(1, k.volume), 0);
+  return vv === 0 ? slice.at(-1)?.close ?? 0 : pv / vv;
+};
+
+const sessionName = (date = new Date()) => {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Dhaka", hour: "2-digit", hour12: false }).format(date));
+  if (hour >= 6 && hour < 12) return "Asia session";
+  if (hour >= 12 && hour < 18) return "London session";
+  if (hour >= 18 && hour < 23) return "New York session";
+  return "Low-liquidity session";
+};
+
 // ---------- next 1-min candle open (BDT-aware via UTC) ----------
 function nextMinuteOpen(now = Date.now()) {
   return Math.floor(now / 60000) * 60000 + 60000;
