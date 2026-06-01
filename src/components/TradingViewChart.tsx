@@ -1,44 +1,34 @@
-import { useEffect, useRef, memo } from "react";
+import { memo, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Crosshair, Radar } from "lucide-react";
 
 function TradingViewChartInner({ symbol }: { symbol: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!ref.current) return;
-    ref.current.innerHTML = "";
-    const inner = document.createElement("div");
-    inner.className = "tradingview-widget-container__widget h-full w-full";
-    ref.current.appendChild(inner);
-
-    const script = document.createElement("script");
-    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-    script.async = true;
-    script.type = "text/javascript";
-    script.innerHTML = JSON.stringify({
-      autosize: true,
+  const src = useMemo(() => {
+    const params = new URLSearchParams({
       symbol,
       interval: "1",
-      timezone: "Asia/Dhaka",
       theme: "dark",
       style: "1",
+      timezone: "Asia/Dhaka",
+      hideideas: "1",
+      saveimage: "0",
+      toolbarbg: "0f172a",
+      studies: "STD;EMA%1FSTD;RSI",
       locale: "en",
-      enable_publishing: false,
-      hide_top_toolbar: false,
-      hide_legend: false,
-      allow_symbol_change: false,
-      backgroundColor: "rgba(20,25,40,0)",
-      gridColor: "rgba(120,140,180,0.08)",
-      studies: ["STD;EMA", "STD;RSI"],
-      support_host: "https://www.tradingview.com",
     });
-    ref.current.appendChild(script);
+    return `https://s.tradingview.com/widgetembed/?${params.toString()}`;
   }, [symbol]);
 
   return (
     <div className="relative h-full w-full rounded-2xl overflow-hidden">
-      <div className="tradingview-widget-container h-full w-full" ref={ref} />
+      <iframe
+        key={symbol}
+        title={`${symbol} live 1 minute TradingView chart`}
+        src={src}
+        className="h-full w-full border-0 bg-background"
+        loading="eager"
+        allow="fullscreen"
+      />
 
       {/* Laser scanner overlay — purely decorative, non-blocking */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
