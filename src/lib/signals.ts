@@ -18,6 +18,9 @@ export type Signal = {
   stoch: number;
   adx: number;
   momentum: number;
+  booster: number;
+  session: string;
+  quality: "A+" | "A" | "B";
   target: number;
   stop: number;
   reason: string;
