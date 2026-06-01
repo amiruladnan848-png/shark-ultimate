@@ -59,8 +59,9 @@
   --bear: oklch(0.7 0.27 22);
   --neutral: oklch(0.82 0.18 85);
   --laser: oklch(0.78 0.26 320);
+  --panel-line: oklch(0.9 0.08 205 / 0.12);
   --grad-shark: linear-gradient(135deg, oklch(0.84 0.22 190) 0%, oklch(0.86 0.24 150) 38%, oklch(0.8 0.26 320) 100%);
-  --grad-aurora: linear-gradient(135deg, oklch(0.45 0.22 280) 0%, oklch(0.55 0.22 200) 50%, oklch(0.55 0.24 320) 100%);
+  --grad-aurora: linear-gradient(135deg, oklch(0.28 0.12 250) 0%, oklch(0.5 0.18 190) 46%, oklch(0.5 0.2 320) 100%);
   --shadow-laser: 0 0 28px oklch(0.78 0.26 320 / 0.42), 0 0 80px oklch(0.82 0.2 190 / 0.3);
   --shadow-bull: 0 0 28px oklch(0.82 0.24 152 / 0.45), 0 0 70px oklch(0.82 0.24 152 / 0.22);
   --shadow-bear: 0 0 28px oklch(0.7 0.27 22 / 0.45), 0 0 70px oklch(0.7 0.27 22 / 0.22);
@@ -78,9 +79,9 @@
     background-image:
       linear-gradient(var(--grid-line) 1px, transparent 1px),
       linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
-      radial-gradient(ellipse 80% 60% at 14% -10%, oklch(0.42 0.18 300 / 0.32), transparent 65%),
-      radial-gradient(ellipse 70% 60% at 100% 110%, oklch(0.82 0.2 190 / 0.22), transparent 65%),
-      radial-gradient(ellipse 50% 40% at 60% 50%, oklch(0.78 0.26 320 / 0.12), transparent 70%);
+      linear-gradient(135deg, oklch(0.1 0.03 260), oklch(0.14 0.04 230) 46%, oklch(0.1 0.025 275)),
+      radial-gradient(ellipse 80% 60% at 14% -10%, oklch(0.42 0.18 300 / 0.22), transparent 65%),
+      radial-gradient(ellipse 70% 60% at 100% 110%, oklch(0.82 0.2 190 / 0.16), transparent 65%);
     background-size: 44px 44px, 44px 44px, auto, auto, auto;
     background-attachment: fixed;
     -webkit-font-smoothing: antialiased;
@@ -124,6 +125,10 @@
 @keyframes laser-sweep {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
+}
+@keyframes border-flow {
+  0%,100% { opacity: .45; transform: translateX(-15%); }
+  50% { opacity: 1; transform: translateX(15%); }
 }
 
 .animate-scan { animation: scan-line 2.4s linear infinite; }
@@ -169,6 +174,17 @@
 .shadow-bear { box-shadow: var(--shadow-bear); }
 .scrollbar-hide { scrollbar-width: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
+.professional-frame { position: relative; }
+.professional-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 0 22%, var(--panel-line) 38%, transparent 58% 100%);
+  mix-blend-mode: screen;
+  animation: border-flow 6s ease-in-out infinite;
+}
 
 .shimmer {
   background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.08), transparent);
@@ -179,3 +195,7 @@
 /* Subtle hover lift used across cards */
 .lift { transition: transform .25s ease, box-shadow .25s ease; }
 .lift:hover { transform: translateY(-2px); box-shadow: 0 24px 60px oklch(0 0 0 / 0.45); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}

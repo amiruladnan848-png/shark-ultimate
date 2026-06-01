@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { LockKeyhole, Radar, ScanLine, Zap } from "lucide-react";
+import { BadgeCheck, Gauge, LockKeyhole, Radar, ScanLine, ShieldCheck, Zap } from "lucide-react";
 import { PinLock } from "@/components/PinLock";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import { SignalPanel } from "@/components/SignalPanel";
@@ -39,7 +39,7 @@ function Dashboard() {
       <motion.header
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between gap-3 mb-4"
+        className="flex items-center justify-between gap-3 mb-5"
       >
         <div className="flex items-center gap-2.5">
           <motion.div
@@ -50,8 +50,8 @@ function Dashboard() {
             <Radar className="w-5 h-5 text-background" />
           </motion.div>
           <div>
-            <h1 className="text-xl font-bold shark-text leading-none">Shark-Ultimate</h1>
-             <p className="text-[10px] text-muted-foreground tracking-wider uppercase">Manual Laser Signal System</p>
+            <h1 className="text-2xl sm:text-3xl font-black shark-text leading-none">Shark-Ultimate</h1>
+            <p className="text-[10px] text-muted-foreground tracking-[0.22em] uppercase">Professional Manual Laser Signal System</p>
           </div>
         </div>
         <BDClock />
@@ -70,9 +70,21 @@ function Dashboard() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15 }}
-        className="mb-4"
+        className="mb-3"
       >
         <PairSelector value={symbol} onChange={setSymbol} />
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.18 }}
+        className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4"
+      >
+        <StatusTile icon={<BadgeCheck className="w-4 h-4" />} label="Accuracy Booster" value="Adaptive" />
+        <StatusTile icon={<Gauge className="w-4 h-4" />} label="Signal Grade" value="A+ / A" />
+        <StatusTile icon={<Zap className="w-4 h-4" />} label="Live Source" value={active.kind === "crypto" ? "Binance 24/7" : "Yahoo FX"} />
+        <StatusTile icon={<ShieldCheck className="w-4 h-4" />} label="Session Filter" value={active.kind === "crypto" ? "Always open" : "BDT locked"} />
       </motion.div>
 
       <div className="grid lg:grid-cols-[1fr_380px] gap-4">
@@ -80,7 +92,7 @@ function Dashboard() {
           layout
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="glass rounded-3xl p-1.5 h-[460px] lg:h-[640px] relative overflow-hidden"
+          className="glass rounded-3xl p-1.5 h-[500px] lg:h-[660px] relative overflow-hidden professional-frame"
         >
           <div className="absolute top-3 left-4 z-10 flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground pointer-events-none">
             <Zap className="w-3 h-3 text-laser" />
@@ -96,14 +108,15 @@ function Dashboard() {
         >
           <SignalPanel symbol={active.symbol} label={active.label} digits={active.digits} kind={active.kind} source={active.source} />
 
-          <div className="glass rounded-3xl p-4 mt-4">
+          <div className="glass rounded-3xl p-4 mt-4 professional-frame">
             <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Engine</div>
             <ul className="text-xs space-y-1.5 text-muted-foreground">
-              <li className="flex justify-between"><span>Data feed</span><span className="text-foreground">Yahoo Finance · live FX</span></li>
+              <li className="flex justify-between gap-3"><span>Data feed</span><span className="text-foreground text-right">Yahoo FX · Binance crypto</span></li>
               <li className="flex justify-between"><span>Signal mode</span><span className="text-foreground inline-flex items-center gap-1"><ScanLine className="w-3 h-3 text-laser" /> Manual</span></li>
               <li className="flex justify-between"><span>Interval</span><span className="text-foreground">1 minute</span></li>
-              <li className="flex justify-between"><span>Indicators</span><span className="text-foreground">EMA9/21/50 · MACD · RSI · STOCH · ADX · BB · MOM</span></li>
-              <li className="flex justify-between"><span>Weekend</span><span className="text-foreground inline-flex items-center gap-1"><LockKeyhole className="w-3 h-3 text-laser" /> Locked</span></li>
+              <li className="flex justify-between gap-3"><span>Indicators</span><span className="text-foreground text-right">MTF EMA · MACD · RSI · ADX · VWAP · ATR</span></li>
+              <li className="flex justify-between"><span>Accuracy</span><span className="text-foreground">Adaptive booster</span></li>
+              <li className="flex justify-between"><span>Forex weekend</span><span className="text-foreground inline-flex items-center gap-1"><LockKeyhole className="w-3 h-3 text-laser" /> Locked</span></li>
               <li className="flex justify-between"><span>Timezone</span><span className="text-foreground">Asia/Dhaka (BDT)</span></li>
             </ul>
           </div>
@@ -118,6 +131,15 @@ function Dashboard() {
       >
         Shark-Ultimate · Signals are algorithmic technical analysis · No trading outcome is guaranteed
       </motion.footer>
+    </div>
+  );
+}
+
+function StatusTile({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="glass rounded-2xl px-3 py-3 professional-frame">
+      <div className="flex items-center gap-2 text-laser mb-1">{icon}<span className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span></div>
+      <div className="text-sm font-bold text-foreground truncate">{value}</div>
     </div>
   );
 }
