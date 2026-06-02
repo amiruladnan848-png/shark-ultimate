@@ -34,6 +34,73 @@ const stooqSymbol = (symbol: string) => symbol.replace("=X", "").toLowerCase();
 const stooqQuoteUrl = (symbol: string) =>
   `https://stooq.com/q/l/?s=${encodeURIComponent(stooqSymbol(symbol))}&f=sd2t2ohlcv&h&e=csv`;
 
+// --- Deriv WebSocket (free public) — 24/7 high-frequency 1-minute candles ----
+// Forex symbols on Deriv use the `frx` prefix (e.g. frxEURUSD).
+const DERIV_FX_MAP: Record<string, string> = {
+  "EURUSD=X": "frxEURUSD",
+  "GBPUSD=X": "frxGBPUSD",
+  "JPY=X": "frxUSDJPY",
+  "CHF=X": "frxUSDCHF",
+  "AUDUSD=X": "frxAUDUSD",
+  "CAD=X": "frxUSDCAD",
+  "NZDUSD=X": "frxNZDUSD",
+  "EURJPY=X": "frxEURJPY",
+  "GBPJPY=X": "frxGBPJPY",
+};
+
+async function fetchDerivKlines(yahooSymbol: string): Promise<Kline[]> {
+  const derivSym = DERIV_FX_MAP[yahooSymbol];
+  if (!derivSym) return [];
+  // Use the runtime WebSocket (available in workerd + Node 22 + browsers).
+  const WS = (globalThis as { WebSocket?: typeof WebSocket }).WebSocket;
+  if (!WS) return [];
+  return new Promise<Kline[]>((resolve) => {
+    let settled = false;
+    const finish = (val: Kline[]) => {
+      if (settled) return;
+      settled = true;
+      try { ws.close(); } catch {}
+      resolve(val);
+    };
+    const ws = new WS("wss://ws.derivws.com/websockets/v3?app_id=1089");
+    const t = setTimeout(() => finish([]), 6500);
+    ws.addEventListener("open", () => {
+      ws.send(
+        JSON.stringify({
+          ticks_history: derivSym,
+          adjust_start_time: 1,
+          count: 300,
+          end: "latest",
+          granularity: 60,
+          style: "candles",
+        }),
+      );
+    });
+    ws.addEventListener("message", (ev: MessageEvent) => {
+      try {
+        const d = JSON.parse(String(ev.data));
+        if (d.error) { clearTimeout(t); finish([]); return; }
+        if (Array.isArray(d.candles)) {
+          clearTimeout(t);
+          const out: Kline[] = d.candles
+            .map((c: { epoch: number; open: string | number; high: string | number; low: string | number; close: string | number }) => ({
+              openTime: Number(c.epoch) * 1000,
+              open: Number(c.open),
+              high: Number(c.high),
+              low: Number(c.low),
+              close: Number(c.close),
+              volume: 1,
+            }))
+            .filter((k: Kline) => [k.open, k.high, k.low, k.close].every(Number.isFinite) && k.close > 0);
+          finish(out.sort((a, b) => a.openTime - b.openTime));
+        }
+      } catch { clearTimeout(t); finish([]); }
+    });
+    ws.addEventListener("error", () => { clearTimeout(t); finish([]); });
+    ws.addEventListener("close", () => { clearTimeout(t); finish([]); });
+  });
+}
+
 async function fetchStooqQuote(symbol: string) {
   const res = await fetch(stooqQuoteUrl(symbol), { headers: YAHOO_HEADERS });
   if (!res.ok) return null;
@@ -93,7 +160,7 @@ async function fetchYahooKlinesRaw(symbol: string): Promise<Kline[]> {
     };
   };
   const r = json.chart.result?.[0];
-  if (!r) throw new Error(json.chart.error?.description ?? "Forex data unavailable");
+  if (!r) return fetchStooqFallbackKlines(symbol);
   const q = r.indicators.quote[0];
   const out: Kline[] = [];
   for (let i = 0; i < r.timestamp.length; i++) {
@@ -113,6 +180,19 @@ async function fetchYahooKlinesRaw(symbol: string): Promise<Kline[]> {
     });
   }
   return out.sort((a, b) => a.openTime - b.openTime).slice(-260);
+}
+
+async function fetchForexKlines(symbol: string): Promise<Kline[]> {
+  // Deriv first — gives clean 24/7 1m candles, big accuracy boost.
+  try {
+    const d = await fetchDerivKlines(symbol);
+    if (d.length >= 80) return d;
+  } catch {}
+  try {
+    const y = await fetchYahooKlinesRaw(symbol);
+    if (y.length >= 80) return y;
+  } catch {}
+  return fetchStooqFallbackKlines(symbol);
 }
 
 async function fetchBinanceKlinesRaw(symbol: string): Promise<Kline[]> {
@@ -144,7 +224,7 @@ export const fetchKlines = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<Kline[]> => {
     const out = data.source === "binance"
       ? await fetchBinanceKlinesRaw(data.symbol)
-      : await fetchYahooKlinesRaw(data.symbol);
+      : await fetchForexKlines(data.symbol);
     const clean = out.filter((k) => k.close > 0 && k.high >= k.low);
     if (clean.length < 80) throw new Error("Live market feed warming up");
     return clean;
@@ -212,4 +292,23 @@ export const fetchQuotes = createServerFn({ method: "POST" })
       }),
     );
     return results.filter((r): r is { symbol: string; price: number; change: number } => r !== null);
+  });
+
+// Quick live close — used by client to evaluate signal win/loss for MTG.
+export const fetchLastClose = createServerFn({ method: "GET" })
+  .inputValidator((d: { symbol: string; source: MarketSource }) => {
+    if (d.source !== "yahoo" && d.source !== "binance") throw new Error("Invalid market source");
+    if (d.source === "yahoo" && !isYahoo(d.symbol)) throw new Error("Invalid forex symbol");
+    if (d.source === "binance" && !isBinance(d.symbol)) throw new Error("Invalid crypto symbol");
+    return d;
+  })
+  .handler(async ({ data }): Promise<{ price: number }> => {
+    if (data.source === "binance") {
+      const q = await fetchBinanceQuoteRaw(data.symbol);
+      if (!q) throw new Error("Quote unavailable");
+      return { price: q.price };
+    }
+    const q = await fetchYahooQuoteRaw(data.symbol);
+    if (!q) throw new Error("Quote unavailable");
+    return { price: q.price };
   });
