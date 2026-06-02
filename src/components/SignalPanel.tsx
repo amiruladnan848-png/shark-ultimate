@@ -1,22 +1,44 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useServerFn } from "@tanstack/react-start";
-import { TrendingUp, TrendingDown, Zap, Target, Shield, Activity, ScanLine, LockKeyhole, Timer, Clock, Gauge, BadgeCheck } from "lucide-react";
+import { TrendingUp, TrendingDown, Zap, Target, Shield, Activity, ScanLine, LockKeyhole, Timer, Clock, Gauge, BadgeCheck, Volume2, VolumeX, ShieldAlert, RefreshCw } from "lucide-react";
 import { generateSignal, formatPrice, formatBDTime, isBangladeshWeekend, type Signal, type ScanPhase, type PairKind, type PairSource } from "@/lib/signals";
-import { fetchKlines } from "@/lib/market.functions";
+import { fetchKlines, fetchLastClose } from "@/lib/market.functions";
+import { buildBanglaResultScript, buildBanglaSignalScript, primeBanglaVoices, speakBangla, stopSpeaking } from "@/lib/speech";
+
+// Accuracy Drop Shelter — minimum acceptable confidence/booster floor.
+const SHELTER_MIN_CONFIDENCE = 82;
+const SHELTER_MIN_BOOSTER = 78;
+const SHELTER_MAX_RETRIES = 2;
+
+type SignalRecord = Signal & { isMtg: boolean };
 
 export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: string; label: string; digits: number; kind: PairKind; source: PairSource }) {
-  const [signal, setSignal] = useState<Signal | null>(null);
+  const [signal, setSignal] = useState<SignalRecord | null>(null);
   const [phase, setPhase] = useState<ScanPhase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(60);
   const [entryLeft, setEntryLeft] = useState<number>(0);
   const [locked, setLocked] = useState(() => kind === "forex" && isBangladeshWeekend());
+  const [shelterTries, setShelterTries] = useState(0);
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [mtgPending, setMtgPending] = useState(false);
+  const [lastResult, setLastResult] = useState<null | { win: boolean; isMtg: boolean }>(null);
+
   const fetchK = useServerFn(fetchKlines);
+  const fetchClose = useServerFn(fetchLastClose);
+  const voiceRef = useRef(voiceOn);
+  voiceRef.current = voiceOn;
+
+  useEffect(() => { primeBanglaVoices(); }, []);
 
   useEffect(() => {
     setSignal(null);
     setError(null);
+    setMtgPending(false);
+    setLastResult(null);
+    setShelterTries(0);
+    stopSpeaking();
     const forexLocked = kind === "forex" && isBangladeshWeekend();
     setLocked(forexLocked);
     setPhase(forexLocked ? "locked" : "idle");
@@ -29,17 +51,19 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
     return () => clearInterval(id);
   }, []);
 
+  // Settle signal at expiry — evaluate win/loss for MTG.
   useEffect(() => {
     if (!signal) return;
     const id = setInterval(() => {
       const left = Math.max(0, signal.expiresAt - Date.now());
       setEntryLeft(left);
       if (left <= 0) {
-        setSignal(null);
-        setPhase("idle");
+        clearInterval(id);
+        void settleSignal(signal);
       }
     }, 250);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signal]);
 
   useEffect(() => {
@@ -54,6 +78,7 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
       if (next) {
         setSignal(null);
         setPhase("locked");
+        stopSpeaking();
       } else if (phase === "locked") {
         setPhase("idle");
       }
@@ -63,26 +88,76 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
     return () => clearInterval(id);
   }, [phase, kind]);
 
-  const scan = async () => {
+  async function settleSignal(s: SignalRecord) {
+    try {
+      const { price } = await fetchClose({ data: { symbol, source } });
+      const win = s.direction === "BUY" ? price > s.price : price < s.price;
+      setLastResult({ win, isMtg: s.isMtg });
+      if (voiceRef.current) speakBangla(buildBanglaResultScript(win, s.isMtg));
+      if (!win && !s.isMtg) {
+        // 1-step MTG: auto re-scan immediately, mark next signal as MTG.
+        setMtgPending(true);
+        setSignal(null);
+        setPhase("idle");
+        setTimeout(() => { void scan(true); }, 1200);
+      } else {
+        setSignal(null);
+        setPhase("idle");
+      }
+    } catch {
+      setSignal(null);
+      setPhase("idle");
+    }
+  }
+
+  const scan = async (asMtg = false) => {
     if (kind === "forex" && isBangladeshWeekend()) {
       setSignal(null); setError(null); setPhase("locked"); setLocked(true); return;
     }
     setPhase("scanning");
     setError(null);
+    setLastResult(null);
+    if (!asMtg) setMtgPending(false);
     try {
-      const k = await fetchK({ data: { symbol, source } });
-      if (!k.length) throw new Error("Live market feed unavailable");
-      const nextSignal = generateSignal(k);
-      setSignal(nextSignal);
-      setEntryLeft(Math.max(0, nextSignal.expiresAt - Date.now()));
+      let attempts = 0;
+      let candidate: Signal | null = null;
+      // Accuracy Drop Shelter — retry until confidence/booster floor is met.
+      while (attempts <= SHELTER_MAX_RETRIES) {
+        const k = await fetchK({ data: { symbol, source } });
+        if (!k.length) throw new Error("Live market feed unavailable");
+        const next = generateSignal(k);
+        if (next.confidence >= SHELTER_MIN_CONFIDENCE && next.booster >= SHELTER_MIN_BOOSTER) {
+          candidate = next;
+          break;
+        }
+        candidate = next;
+        attempts += 1;
+        setShelterTries(attempts);
+        if (attempts <= SHELTER_MAX_RETRIES) await new Promise((r) => setTimeout(r, 650));
+      }
+      if (!candidate) throw new Error("No high-accuracy setup found");
+      const record: SignalRecord = { ...candidate, isMtg: asMtg };
+      setSignal(record);
+      setEntryLeft(Math.max(0, record.expiresAt - Date.now()));
       setPhase("ready");
+      setShelterTries(0);
+      if (voiceRef.current) {
+        speakBangla(
+          buildBanglaSignalScript({
+            pairLabel: label,
+            direction: record.direction,
+            confidence: record.confidence,
+            quality: record.quality,
+            isMtg: asMtg,
+          }),
+        );
+      }
     } catch (e) {
       setSignal(null);
       setError((e as Error).message || "Signal scan failed");
       setPhase("error");
     }
   };
-
 
   const isBuy = signal?.direction === "BUY";
   const dirColor = isBuy ? "text-bull" : signal?.direction === "SELL" ? "text-bear" : "text-laser";
@@ -91,6 +166,13 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
 
   const expirySec = Math.ceil(entryLeft / 1000);
   const entrySec = signal ? Math.max(0, Math.ceil((signal.entryAt - Date.now()) / 1000)) : 0;
+
+  const toggleVoice = () => {
+    setVoiceOn((v) => {
+      if (v) stopSpeaking();
+      return !v;
+    });
+  };
 
   return (
     <div className="glass-strong rounded-3xl p-5 relative overflow-hidden lift">
@@ -104,25 +186,59 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
           <div className="w-2 h-2 rounded-full bg-bull animate-pulse" />
           <span className="text-xs uppercase tracking-widest text-muted-foreground">Laser Signal Scanner</span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
-          <Activity className="w-3 h-3" />
-          Next bar <span className="text-foreground font-mono w-5 text-right">{countdown}s</span>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+          <button
+            onClick={toggleVoice}
+            aria-label="Toggle Bangla voice"
+            className="p-1.5 rounded-lg glass hover:text-laser transition-colors"
+            title={voiceOn ? "Bangla voice on" : "Bangla voice off"}
+          >
+            {voiceOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+          </button>
+          <div className="inline-flex items-center gap-1.5">
+            <Activity className="w-3 h-3" />
+            Next bar <span className="text-foreground font-mono w-5 text-right">{countdown}s</span>
+          </div>
         </div>
       </div>
 
       <motion.button
         whileTap={{ scale: 0.97 }}
         whileHover={{ scale: 1.01 }}
-        onClick={scan}
+        onClick={() => scan(false)}
         disabled={phase === "scanning" || locked}
-        className={`relative w-full mb-4 rounded-2xl shark-grad px-4 py-3.5 text-sm font-black uppercase tracking-[0.28em] text-primary-foreground shadow-laser disabled:cursor-not-allowed disabled:opacity-50 overflow-hidden`}
+        className={`relative w-full mb-3 rounded-2xl shark-grad px-4 py-3.5 text-sm font-black uppercase tracking-[0.28em] text-primary-foreground shadow-laser disabled:cursor-not-allowed disabled:opacity-50 overflow-hidden`}
       >
         <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/30 to-transparent animate-laser-sweep pointer-events-none" />
         <span className="relative inline-flex items-center justify-center gap-2">
           {locked ? <LockKeyhole className="w-4 h-4" /> : <ScanLine className="w-4 h-4" />}
-          {locked ? "Weekend Locked" : phase === "scanning" ? "Laser Scanning…" : "Run Signal Scan"}
+          {locked ? "Weekend Locked" : phase === "scanning" ? "Laser Scanning…" : mtgPending ? "Run MTG Scan" : "Run Signal Scan"}
         </span>
       </motion.button>
+
+      {/* Accuracy Drop Shelter banner */}
+      {phase === "scanning" && shelterTries > 0 && (
+        <div className="flex items-center gap-2 text-[11px] text-laser/90 mb-2 px-2">
+          <ShieldAlert className="w-3.5 h-3.5" />
+          Accuracy Shelter active — re-scanning ({shelterTries}/{SHELTER_MAX_RETRIES})…
+        </div>
+      )}
+
+      {/* MTG pending banner */}
+      {mtgPending && phase !== "scanning" && !signal && (
+        <div className="flex items-center gap-2 text-[11px] text-neutral mb-2 px-2">
+          <RefreshCw className="w-3.5 h-3.5" />
+          MTG step armed — next scan will be a Martingale recovery.
+        </div>
+      )}
+
+      {/* Last result chip */}
+      {lastResult && (
+        <div className={`mb-2 px-3 py-1.5 rounded-xl glass text-xs flex items-center justify-between ${lastResult.win ? "text-bull" : "text-bear"}`}>
+          <span className="uppercase tracking-widest">{lastResult.isMtg ? "MTG result" : "Last signal"}</span>
+          <span className="font-bold">{lastResult.win ? "WIN" : "LOSS"}</span>
+        </div>
+      )}
 
       {phase === "scanning" && !signal && (
         <div className="py-10 flex flex-col items-center gap-3 text-muted-foreground">
@@ -162,6 +278,11 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.4 }}
           >
+            {signal.isMtg && (
+              <div className="mb-3 px-3 py-1.5 rounded-xl bg-neutral/15 text-neutral text-[11px] uppercase tracking-widest font-bold flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5" /> MTG Step 1 · Recovery Signal
+              </div>
+            )}
             <div className="flex items-center justify-between gap-4 mb-4">
               <div>
                 <div className="text-xs text-muted-foreground">{label}</div>
