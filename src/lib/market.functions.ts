@@ -9,7 +9,20 @@ export type Kline = {
   volume: number;
 };
 
-export type MarketSource = "yahoo" | "binance";
+export type MarketSource = "deriv" | "yahoo" | "binance";
+
+const candleCache = new Map<string, { ts: number; data: Kline[] }>();
+const quoteCache = new Map<string, { ts: number; data: { symbol: string; price: number; change: number } }>();
+
+function getCached<T>(cache: Map<string, { ts: number; data: T }>, key: string, ttlMs: number) {
+  const hit = cache.get(key);
+  return hit && Date.now() - hit.ts < ttlMs ? hit.data : null;
+}
+
+function setCached<T>(cache: Map<string, { ts: number; data: T }>, key: string, data: T) {
+  cache.set(key, { ts: Date.now(), data });
+  return data;
+}
 
 const YAHOO_HEADERS = {
   "User-Agent":
@@ -56,13 +69,14 @@ async function fetchDerivKlines(yahooSymbol: string): Promise<Kline[]> {
   if (!WS) return [];
   return new Promise<Kline[]>((resolve) => {
     let settled = false;
+    let ws: WebSocket | null = null;
     const finish = (val: Kline[]) => {
       if (settled) return;
       settled = true;
-      try { ws.close(); } catch {}
+      try { ws?.close(); } catch {}
       resolve(val);
     };
-    const ws = new WS("wss://ws.derivws.com/websockets/v3?app_id=1089");
+    ws = new WS("wss://ws.derivws.com/websockets/v3?app_id=1089");
     const t = setTimeout(() => finish([]), 6500);
     ws.addEventListener("open", () => {
       ws.send(
@@ -98,6 +112,40 @@ async function fetchDerivKlines(yahooSymbol: string): Promise<Kline[]> {
     });
     ws.addEventListener("error", () => { clearTimeout(t); finish([]); });
     ws.addEventListener("close", () => { clearTimeout(t); finish([]); });
+  });
+}
+
+async function fetchDerivQuote(symbol: string) {
+  const cached = getCached(quoteCache, `fx:${symbol}`, 3500);
+  if (cached) return cached;
+  const derivSym = DERIV_FX_MAP[symbol];
+  const WS = (globalThis as { WebSocket?: typeof WebSocket }).WebSocket;
+  if (!derivSym || !WS) return null;
+  return new Promise<{ symbol: string; price: number; change: number } | null>((resolve) => {
+    let settled = false;
+    let ws: WebSocket | null = null;
+    const finish = (val: { symbol: string; price: number; change: number } | null) => {
+      if (settled) return;
+      settled = true;
+      try { ws?.close(); } catch {}
+      resolve(val);
+    };
+    ws = new WS("wss://ws.derivws.com/websockets/v3?app_id=1089");
+    const t = setTimeout(() => finish(null), 4500);
+    ws.addEventListener("open", () => ws?.send(JSON.stringify({ ticks: derivSym, subscribe: 0 })));
+    ws.addEventListener("message", (ev: MessageEvent) => {
+      try {
+        const d = JSON.parse(String(ev.data)) as { tick?: { quote?: number }; error?: unknown };
+        if (d.error) { clearTimeout(t); finish(null); return; }
+        const price = Number(d.tick?.quote);
+        if (Number.isFinite(price) && price > 0) {
+          clearTimeout(t);
+          finish(setCached(quoteCache, `fx:${symbol}`, { symbol, price, change: 0 }));
+        }
+      } catch { clearTimeout(t); finish(null); }
+    });
+    ws.addEventListener("error", () => { clearTimeout(t); finish(null); });
+    ws.addEventListener("close", () => { clearTimeout(t); finish(null); });
   });
 }
 
@@ -183,25 +231,29 @@ async function fetchYahooKlinesRaw(symbol: string): Promise<Kline[]> {
 }
 
 async function fetchForexKlines(symbol: string): Promise<Kline[]> {
+  const cached = getCached(candleCache, `fx:${symbol}`, 5000);
+  if (cached) return cached;
   // Deriv first — gives clean 24/7 1m candles, big accuracy boost.
   try {
     const d = await fetchDerivKlines(symbol);
-    if (d.length >= 80) return d;
+    if (d.length >= 80) return setCached(candleCache, `fx:${symbol}`, d);
   } catch {}
   try {
     const y = await fetchYahooKlinesRaw(symbol);
-    if (y.length >= 80) return y;
+    if (y.length >= 80) return setCached(candleCache, `fx:${symbol}`, y);
   } catch {}
-  return fetchStooqFallbackKlines(symbol);
+  return setCached(candleCache, `fx:${symbol}`, await fetchStooqFallbackKlines(symbol));
 }
 
 async function fetchBinanceKlinesRaw(symbol: string): Promise<Kline[]> {
+  const cached = getCached(candleCache, `crypto:${symbol}`, 5000);
+  if (cached) return cached;
   const res = await fetch(binanceKlineUrl(symbol));
   if (!res.ok) throw new Error(`Crypto feed error (${res.status})`);
   const arr = (await res.json()) as Array<
     [number, string, string, string, string, string, number, string, number, string, string, string]
   >;
-  return arr
+  const out = arr
     .map((k) => ({
       openTime: k[0],
       open: parseFloat(k[1]),
@@ -212,12 +264,13 @@ async function fetchBinanceKlinesRaw(symbol: string): Promise<Kline[]> {
     }))
     .filter((k) => [k.open, k.high, k.low, k.close, k.volume].every(Number.isFinite))
     .sort((a, b) => a.openTime - b.openTime);
+  return setCached(candleCache, `crypto:${symbol}`, out);
 }
 
 export const fetchKlines = createServerFn({ method: "GET" })
   .inputValidator((d: { symbol: string; source: MarketSource }) => {
-    if (d.source !== "yahoo" && d.source !== "binance") throw new Error("Invalid market source");
-    if (d.source === "yahoo" && !isYahoo(d.symbol)) throw new Error("Invalid forex symbol");
+    if (d.source !== "deriv" && d.source !== "yahoo" && d.source !== "binance") throw new Error("Invalid market source");
+    if ((d.source === "deriv" || d.source === "yahoo") && !isYahoo(d.symbol)) throw new Error("Invalid forex symbol");
     if (d.source === "binance" && !isBinance(d.symbol)) throw new Error("Invalid crypto symbol");
     return d;
   })
@@ -233,10 +286,12 @@ export const fetchKlines = createServerFn({ method: "GET" })
 type QuoteInput = { symbol: string; source: MarketSource };
 
 async function fetchYahooQuoteRaw(symbol: string) {
+  const cached = getCached(quoteCache, `fx:${symbol}`, 5000);
+  if (cached) return cached;
   const quote = await fetchStooqQuote(symbol);
   if (quote) {
     const previous = quote.open > 0 ? quote.open : quote.close;
-    return { symbol, price: quote.close, change: previous === 0 ? 0 : ((quote.close - previous) / previous) * 100 };
+    return setCached(quoteCache, `fx:${symbol}`, { symbol, price: quote.close, change: previous === 0 ? 0 : ((quote.close - previous) / previous) * 100 });
   }
   const res = await fetch(yahooUrl(symbol), { headers: YAHOO_HEADERS });
   if (!res.ok) return null;
@@ -255,17 +310,25 @@ async function fetchYahooQuoteRaw(symbol: string) {
   const price = r?.meta.regularMarketPrice ?? closes.at(-1);
   const previous = r?.meta.chartPreviousClose ?? closes.at(-2) ?? price;
   if (price == null || previous == null || previous === 0) return null;
-  return { symbol, price, change: ((price - previous) / previous) * 100 };
+  return setCached(quoteCache, `fx:${symbol}`, { symbol, price, change: ((price - previous) / previous) * 100 });
+}
+
+async function fetchForexQuoteRaw(symbol: string) {
+  const cached = getCached(quoteCache, `fx:${symbol}`, 3500);
+  if (cached) return cached;
+  return (await fetchDerivQuote(symbol)) ?? fetchYahooQuoteRaw(symbol);
 }
 
 async function fetchBinanceQuoteRaw(symbol: string) {
+  const cached = getCached(quoteCache, `crypto:${symbol}`, 5000);
+  if (cached) return cached;
   const res = await fetch(binanceTickerUrl(symbol));
   if (!res.ok) return null;
   const j = (await res.json()) as { lastPrice: string; priceChangePercent: string };
   const price = parseFloat(j.lastPrice);
   const change = parseFloat(j.priceChangePercent);
   if (!Number.isFinite(price)) return null;
-  return { symbol, price, change };
+  return setCached(quoteCache, `crypto:${symbol}`, { symbol, price, change });
 }
 
 export const fetchQuotes = createServerFn({ method: "POST" })
@@ -273,8 +336,8 @@ export const fetchQuotes = createServerFn({ method: "POST" })
     if (!Array.isArray(d.pairs)) throw new Error("Invalid pairs");
     if (d.pairs.length > 40) throw new Error("Too many pairs");
     for (const p of d.pairs) {
-      if (p.source !== "yahoo" && p.source !== "binance") throw new Error("Invalid market source");
-      if (p.source === "yahoo" && !isYahoo(p.symbol)) throw new Error("Invalid forex symbol");
+      if (p.source !== "deriv" && p.source !== "yahoo" && p.source !== "binance") throw new Error("Invalid market source");
+      if ((p.source === "deriv" || p.source === "yahoo") && !isYahoo(p.symbol)) throw new Error("Invalid forex symbol");
       if (p.source === "binance" && !isBinance(p.symbol)) throw new Error("Invalid crypto symbol");
     }
     return d;
@@ -285,7 +348,7 @@ export const fetchQuotes = createServerFn({ method: "POST" })
         try {
           return p.source === "binance"
             ? await fetchBinanceQuoteRaw(p.symbol)
-            : await fetchYahooQuoteRaw(p.symbol);
+            : await fetchForexQuoteRaw(p.symbol);
         } catch {
           return null;
         }
@@ -297,8 +360,8 @@ export const fetchQuotes = createServerFn({ method: "POST" })
 // Quick live close — used by client to evaluate signal win/loss for MTG.
 export const fetchLastClose = createServerFn({ method: "GET" })
   .inputValidator((d: { symbol: string; source: MarketSource }) => {
-    if (d.source !== "yahoo" && d.source !== "binance") throw new Error("Invalid market source");
-    if (d.source === "yahoo" && !isYahoo(d.symbol)) throw new Error("Invalid forex symbol");
+    if (d.source !== "deriv" && d.source !== "yahoo" && d.source !== "binance") throw new Error("Invalid market source");
+    if ((d.source === "deriv" || d.source === "yahoo") && !isYahoo(d.symbol)) throw new Error("Invalid forex symbol");
     if (d.source === "binance" && !isBinance(d.symbol)) throw new Error("Invalid crypto symbol");
     return d;
   })
@@ -308,7 +371,7 @@ export const fetchLastClose = createServerFn({ method: "GET" })
       if (!q) throw new Error("Quote unavailable");
       return { price: q.price };
     }
-    const q = await fetchYahooQuoteRaw(data.symbol);
+    const q = await fetchForexQuoteRaw(data.symbol);
     if (!q) throw new Error("Quote unavailable");
     return { price: q.price };
   });

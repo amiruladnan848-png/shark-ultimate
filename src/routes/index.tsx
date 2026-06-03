@@ -83,7 +83,7 @@ function Dashboard() {
       >
         <StatusTile icon={<BadgeCheck className="w-4 h-4" />} label="Accuracy Booster" value="Adaptive" />
         <StatusTile icon={<Gauge className="w-4 h-4" />} label="Signal Grade" value="A+ / A" />
-        <StatusTile icon={<Zap className="w-4 h-4" />} label="Live Source" value={active.kind === "crypto" ? "Binance 24/7" : "Yahoo FX"} />
+        <StatusTile icon={<Zap className="w-4 h-4" />} label="Live Source" value={active.kind === "crypto" ? "Binance 24/7" : "Deriv WS + TradingView"} />
         <StatusTile icon={<ShieldCheck className="w-4 h-4" />} label="Session Filter" value={active.kind === "crypto" ? "Always open" : "BDT locked"} />
       </motion.div>
 

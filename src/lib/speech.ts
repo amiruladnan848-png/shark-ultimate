@@ -60,6 +60,14 @@ const PAIR_BN: Record<string, string> = {
   "NZD / USD": "নিউজিল্যান্ড ডলার",
   "EUR / JPY": "ইউরো ইয়েন",
   "GBP / JPY": "পাউন্ড ইয়েন",
+  "BTC / USDT": "বিটকয়েন ইউ এস ডি টি",
+  "ETH / USDT": "ইথেরিয়াম ইউ এস ডি টি",
+  "BNB / USDT": "বি এন বি ইউ এস ডি টি",
+  "SOL / USDT": "সোলানা ইউ এস ডি টি",
+  "XRP / USDT": "এক্স আর পি ইউ এস ডি টি",
+  "ADA / USDT": "এ ডি এ ইউ এস ডি টি",
+  "DOGE / USDT": "ডজ কয়েন ইউ এস ডি টি",
+  "AVAX / USDT": "অ্যাভ্যাক্স ইউ এস ডি টি",
 };
 
 function pairBn(label: string) {
@@ -71,12 +79,15 @@ export function buildBanglaSignalScript(opts: {
   direction: "BUY" | "SELL";
   confidence: number;
   quality: string;
+  session?: string;
   isMtg?: boolean;
 }) {
   const dir = opts.direction === "BUY" ? "বাই" : "সেল";
   const pair = pairBn(opts.pairLabel);
-  const mtg = opts.isMtg ? "এম টি জি প্রথম ধাপ। " : "";
-  return `${mtg}${pair} এর জন্য ${dir} সিগন্যাল। অ্যাকুরেসি ${opts.confidence} শতাংশ। গ্রেড ${opts.quality}। প্রস্তুত হন।`;
+  const mtg = opts.isMtg ? "এম টি জি প্রথম ধাপ। " : "প্রফেশনাল মার্কেট স্ক্যান সম্পন্ন। ";
+  const quality = opts.quality === "A+" ? "এ প্লাস" : opts.quality === "A" ? "এ" : "বি";
+  const session = opts.session ? ` ${opts.session.replace(" session", "")} মার্কেট ডিটেক্টেড।` : "";
+  return `${mtg}${pair} এর জন্য ${dir} সিগন্যাল।${session} কনফিডেন্স ${opts.confidence} শতাংশ। গ্রেড ${quality}। এক মিনিট এন্ট্রির জন্য প্রস্তুত হন।`;
 }
 
 export function buildBanglaResultScript(win: boolean, isMtg: boolean) {
