@@ -188,10 +188,13 @@ export function formatBDTime(ts: number) {
 
 // ---------- master signal generator ----------
 export function generateSignal(klines: Kline[]): Signal {
-  if (klines.length < 80) throw new Error("Market feed warming up — scan again soon.");
-  const closes = klines.map((k) => k.close);
-  const price = closes[closes.length - 1];
+  const clean = klines
+    .filter((k) => [k.open, k.high, k.low, k.close].every(Number.isFinite) && k.close > 0 && k.high >= k.low)
+    .sort((a, b) => a.openTime - b.openTime);
+  if (clean.length < 100) throw new Error("Market feed warming up — scan again soon.");
 
+  const closes = clean.map((k) => k.close);
+  const price = closes.at(-1)!;
   const e9 = ema(closes, 9);
   const e21 = ema(closes, 21);
   const e50 = ema(closes, 50);
@@ -201,92 +204,103 @@ export function generateSignal(klines: Kline[]): Signal {
 
   const rsiArr = rsiSeries(closes, 14);
   const r = rsiArr.at(-1)!;
-  const rPrev = rsiArr.at(-3) ?? r;
-
+  const rPrev = rsiArr.at(-4) ?? r;
+  const rSlope = r - rPrev;
   const m = macd(closes);
-  const stoch = stochastic(klines, 14);
-  const adxVal = adx(klines, 14);
+  const hist = m.macd - m.signal;
+  const histPrev = macd(closes.slice(0, -1)).macd - macd(closes.slice(0, -1)).signal;
+  const histRising = hist > histPrev;
+  const stoch = stochastic(clean, 14);
+  const stochPrev = stochastic(clean.slice(0, -3), 14);
+  const stochSlope = stoch - stochPrev;
+  const adxVal = adx(clean, 14);
   const bb = bollinger(closes, 20, 2);
+  const bbWidth = Math.max(Math.abs(bb.upper - bb.lower), price * 0.00001);
+  const bbPosition = (price - bb.lower) / bbWidth;
 
-  const base = closes.at(-6) ?? closes[0];
-  const momentum = ((price - base) / base) * 100;
-
-  // Multi-timeframe trend confirmation from the same 1m feed.
-  const k5 = aggregateKlines(klines, 5);
+  const k5 = aggregateKlines(clean, 5);
   const c5 = k5.map((k) => k.close);
   const e5Fast = c5.length >= 21 ? ema(c5, 9).at(-1)! : ema9;
   const e5Slow = c5.length >= 21 ? ema(c5, 21).at(-1)! : ema21;
-  const vwap30 = vwap(klines, 30) || price;
+  const k15 = aggregateKlines(clean, 15);
+  const c15 = k15.map((k) => k.close);
+  const e15Fast = c15.length >= 12 ? ema(c15, 5).at(-1)! : e5Fast;
+  const e15Slow = c15.length >= 12 ? ema(c15, 12).at(-1)! : e5Slow;
+  const vwap30 = vwap(clean, 30) || price;
   const slope9 = slope(e9, 4);
-  const slope21 = slope(e21, 5);
-  const rSlope = r - rPrev;
-  const macdHistPrev = (() => {
-    const e12 = ema(closes.slice(0, -1), 12);
-    const e26 = ema(closes.slice(0, -1), 26);
-    const line = closes.slice(0, -1).map((_, i) => e12[i] - e26[i]);
-    const sig = ema(line, 9);
-    return line.at(-1)! - sig.at(-1)!;
-  })();
-  const histRising = (m.macd - m.signal) > macdHistPrev;
-
-  const volatility = atr(klines, 14);
+  const slope21 = slope(e21, 6);
+  const volatility = atr(clean, 14);
+  const atrLong = atr(clean, 42) || volatility;
   const volRatio = price > 0 ? volatility / price : 0;
-  const tooFlat = volRatio < 0.00004;
-  const tooWild = volRatio > 0.012;
+  const momentumBase = closes.at(-7) ?? closes[0];
+  const momentum = ((price - momentumBase) / momentumBase) * 100;
+  const last = clean.at(-1)!;
+  const lastRange = Math.max(last.high - last.low, volatility * 0.25, price * 0.00001);
+  const closeLocation = (last.close - last.low) / lastRange;
+  const recent = clean.slice(-6);
+  const bodyPower = recent.reduce((sum, k) => sum + (k.close - k.open) / Math.max(k.high - k.low, price * 0.00001), 0) / recent.length;
+  const impulse = (price - (closes.at(-4) ?? price)) / Math.max(volatility, price * 0.00001);
+  const flips = clean.slice(-14).reduce((n, k, i, arr) => {
+    if (i < 2) return n;
+    const a = Math.sign(k.close - arr[i - 1].close);
+    const b = Math.sign(arr[i - 1].close - arr[i - 2].close);
+    return n + (a !== 0 && b !== 0 && a !== b ? 1 : 0);
+  }, 0);
+  const chopPenalty = clamp(flips / 12, 0, 1);
+  const tooFlat = volRatio < 0.000035;
+  const tooWild = volRatio > 0.014 || volatility > atrLong * 2.2;
 
-  // ---- professional consensus voting (each indicator votes -1 or +1, weighted) ----
   type Vote = { name: string; v: -1 | 1; w: number };
   const votes: Vote[] = [
-    { name: "EMA9/21 trend",  v: ema9 > ema21 ? 1 : -1, w: 2.4 },
-    { name: "EMA21/50 trend", v: ema21 > ema50 ? 1 : -1, w: 2.0 },
-    { name: "Price/EMA50",    v: price > ema50 ? 1 : -1, w: 1.4 },
-    { name: "5m alignment",   v: e5Fast > e5Slow ? 1 : -1, w: 2.0 },
-    { name: "VWAP pressure",  v: price > vwap30 ? 1 : -1, w: 1.5 },
-    { name: "EMA9 slope",     v: slope9 >= 0 ? 1 : -1, w: 1.5 },
-    { name: "EMA21 slope",    v: slope21 >= 0 ? 1 : -1, w: 1.2 },
-    { name: "MACD cross",     v: m.macd > m.signal ? 1 : -1, w: 2.0 },
-    { name: "MACD impulse",   v: histRising ? 1 : -1, w: 1.5 },
-    { name: "MACD zero-line", v: m.macd > 0 ? 1 : -1, w: 0.9 },
-    { name: "RSI regime",     v: r > 50 ? 1 : -1, w: 1.3 },
-    { name: "RSI slope",      v: rSlope >= 0 ? 1 : -1, w: 1.0 },
-    { name: "Stochastic flow", v: stoch > 50 ? 1 : -1, w: 0.9 },
-    { name: "Momentum pulse", v: momentum > 0 ? 1 : -1, w: 1.6 },
-    { name: "Bollinger mid",  v: price > bb.mid ? 1 : -1, w: 1.0 },
+    { name: "EMA stack", v: ema9 > ema21 && ema21 > ema50 ? 1 : -1, w: 2.8 },
+    { name: "Fast EMA slope", v: slope9 >= 0 ? 1 : -1, w: 1.8 },
+    { name: "Trend slope", v: slope21 >= 0 ? 1 : -1, w: 1.5 },
+    { name: "5m confirmation", v: e5Fast > e5Slow ? 1 : -1, w: 2.4 },
+    { name: "15m bias", v: e15Fast > e15Slow ? 1 : -1, w: 1.6 },
+    { name: "VWAP control", v: price > vwap30 ? 1 : -1, w: 1.8 },
+    { name: "MACD cross", v: m.macd > m.signal ? 1 : -1, w: 2.2 },
+    { name: "MACD impulse", v: histRising ? 1 : -1, w: 1.6 },
+    { name: "RSI flow", v: r > 52 || (r > 46 && rSlope > 0) ? 1 : -1, w: 1.5 },
+    { name: "Stochastic timing", v: stoch > 52 || (stoch > 35 && stochSlope > 0) ? 1 : -1, w: 1.1 },
+    { name: "Bollinger pressure", v: bbPosition >= 0.5 ? 1 : -1, w: 1.1 },
+    { name: "Candle body flow", v: bodyPower >= 0 ? 1 : -1, w: 1.7 },
+    { name: "Close-location pressure", v: closeLocation >= 0.52 ? 1 : -1, w: 1.2 },
+    { name: "Momentum pulse", v: momentum >= 0 ? 1 : -1, w: 1.5 },
+    { name: "Micro impulse", v: impulse >= 0 ? 1 : -1, w: 1.1 },
   ];
 
-  // ADX + volatility quality filter — boost clean trends, dampen chop/extreme spikes.
-  const trendStrength = clamp(adxVal / 24, 0.6, 1.55) * (tooFlat ? 0.72 : 1) * (tooWild ? 0.82 : 1);
+  const exhaustionSell = r > 73 && stoch > 86 && bbPosition > 0.92 && (bodyPower < 0.22 || closeLocation < 0.58);
+  const exhaustionBuy = r < 27 && stoch < 14 && bbPosition < 0.08 && (bodyPower > -0.22 || closeLocation > 0.42);
+  if (exhaustionSell) votes.push({ name: "Overbought rejection", v: -1, w: 3.2 });
+  if (exhaustionBuy) votes.push({ name: "Oversold rejection", v: 1, w: 3.2 });
+
+  const qualityMultiplier = clamp(1.12 - chopPenalty * 0.28 - (tooFlat ? 0.2 : 0) - (tooWild ? 0.16 : 0), 0.72, 1.18);
+  const trendStrength = clamp(adxVal / 25, 0.72, 1.45) * qualityMultiplier;
   const score = votes.reduce((s, v) => s + v.v * v.w * trendStrength, 0);
   const maxScore = votes.reduce((s, v) => s + v.w * trendStrength, 0);
-
   const direction: Signal["direction"] = score >= 0 ? "BUY" : "SELL";
-  const agreement = Math.abs(score) / maxScore; // 0..1
-
+  const agreement = clamp(Math.abs(score) / Math.max(maxScore, 1), 0, 1);
   const coreAligned =
-    (direction === "BUY" && ema9 > ema21 && ema21 > ema50 && e5Fast > e5Slow && m.macd > m.signal && price > vwap30) ||
-    (direction === "SELL" && ema9 < ema21 && ema21 < ema50 && e5Fast < e5Slow && m.macd < m.signal && price < vwap30);
+    (direction === "BUY" && ema9 > ema21 && e5Fast > e5Slow && hist >= histPrev && price >= vwap30 && bodyPower > -0.12) ||
+    (direction === "SELL" && ema9 < ema21 && e5Fast < e5Slow && hist <= histPrev && price <= vwap30 && bodyPower < 0.12);
   const session = sessionName();
-  const sessionBoost = session === "Low-liquidity session" ? -2 : session === "London session" || session === "New York session" ? 2 : 1;
-  const volatilityBoost = tooFlat ? -5 : tooWild ? -4 : 2;
-  const booster = clamp(
-    70 + agreement * 18 + Math.min(8, adxVal / 4) + (coreAligned ? 7 : 0) + volatilityBoost + sessionBoost,
-    58,
-    99,
-  );
-  let confidence = 68 + agreement * 20 + Math.min(6, adxVal / 5) + Math.min(4, Math.abs(momentum) * 28);
-  confidence += coreAligned ? 6 : -3;
-  confidence += volatilityBoost + sessionBoost;
-  confidence = clamp(confidence, coreAligned ? 82 : 74, 99);
-  const quality: Signal["quality"] = confidence >= 92 && coreAligned ? "A+" : confidence >= 84 ? "A" : "B";
+  const sessionBoost = session === "Low-liquidity session" ? -1.5 : session === "London session" || session === "New York session" ? 2.5 : 1;
+  const volatilityBoost = tooFlat ? -6 : tooWild ? -5 : 2.5;
+  const chopBoost = chopPenalty > 0.58 ? -4 : chopPenalty < 0.28 ? 2 : 0;
+  let confidence = 73 + agreement * 18 + Math.min(7, adxVal / 5) + Math.min(4, Math.abs(impulse) * 1.2);
+  confidence += coreAligned ? 7 : -1.5;
+  confidence += volatilityBoost + chopBoost + sessionBoost;
+  if (!coreAligned && agreement < 0.48) confidence -= 5;
+  if ((direction === "BUY" && exhaustionSell) || (direction === "SELL" && exhaustionBuy)) confidence -= 7;
+  confidence = clamp(confidence, coreAligned ? 84 : 78, 99);
+  const booster = clamp(confidence + (coreAligned ? 3 : 0) + (chopPenalty < 0.34 ? 2 : -2), 70, 99);
+  const quality: Signal["quality"] = confidence >= 93 && coreAligned && agreement > 0.62 ? "A+" : confidence >= 85 ? "A" : "B";
 
   const aligned = votes.filter((v) => v.v === (direction === "BUY" ? 1 : -1));
-  const top = aligned.sort((a, b) => b.w - a.w).slice(0, 3).map((v) => v.name).join(" + ");
-  const reason = `${direction === "BUY" ? "Bullish" : "Bearish"} ${quality} consensus · ${session} · Booster ${Math.round(booster)}% · ${top}`;
-
-  const a = volatility;
-  const target = direction === "BUY" ? price + a * 1.45 : price - a * 1.45;
-  const stop = direction === "BUY" ? price - a * 0.78 : price + a * 0.78;
-
+  const top = aligned.sort((a, b) => b.w - a.w).slice(0, 4).map((v) => v.name).join(" + ");
+  const reason = `${direction === "BUY" ? "Bullish" : "Bearish"} ${quality} consensus · ${session} · Shelter ${Math.round(booster)}% · ${top}`;
+  const target = direction === "BUY" ? price + volatility * 0.95 : price - volatility * 0.95;
+  const stop = direction === "BUY" ? price - volatility * 0.62 : price + volatility * 0.62;
   const entryAt = nextMinuteOpen();
   const expiresAt = entryAt + 60000;
 
