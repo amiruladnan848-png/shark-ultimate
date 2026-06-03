@@ -208,7 +208,8 @@ export function generateSignal(klines: Kline[]): Signal {
   const rSlope = r - rPrev;
   const m = macd(closes);
   const hist = m.macd - m.signal;
-  const histPrev = macd(closes.slice(0, -1)).macd - macd(closes.slice(0, -1)).signal;
+  const prevMacd = macd(closes.slice(0, -1));
+  const histPrev = prevMacd.macd - prevMacd.signal;
   const histRising = hist > histPrev;
   const stoch = stochastic(clean, 14);
   const stochPrev = stochastic(clean.slice(0, -3), 14);
