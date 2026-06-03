@@ -9,7 +9,20 @@ export type Kline = {
   volume: number;
 };
 
-export type MarketSource = "yahoo" | "binance";
+export type MarketSource = "deriv" | "yahoo" | "binance";
+
+const candleCache = new Map<string, { ts: number; data: Kline[] }>();
+const quoteCache = new Map<string, { ts: number; data: { symbol: string; price: number; change: number } }>();
+
+function getCached<T>(cache: Map<string, { ts: number; data: T }>, key: string, ttlMs: number) {
+  const hit = cache.get(key);
+  return hit && Date.now() - hit.ts < ttlMs ? hit.data : null;
+}
+
+function setCached<T>(cache: Map<string, { ts: number; data: T }>, key: string, data: T) {
+  cache.set(key, { ts: Date.now(), data });
+  return data;
+}
 
 const YAHOO_HEADERS = {
   "User-Agent":
@@ -56,13 +69,14 @@ async function fetchDerivKlines(yahooSymbol: string): Promise<Kline[]> {
   if (!WS) return [];
   return new Promise<Kline[]>((resolve) => {
     let settled = false;
+    let ws: WebSocket | null = null;
     const finish = (val: Kline[]) => {
       if (settled) return;
       settled = true;
-      try { ws.close(); } catch {}
+      try { ws?.close(); } catch {}
       resolve(val);
     };
-    const ws = new WS("wss://ws.derivws.com/websockets/v3?app_id=1089");
+    ws = new WS("wss://ws.derivws.com/websockets/v3?app_id=1089");
     const t = setTimeout(() => finish([]), 6500);
     ws.addEventListener("open", () => {
       ws.send(
@@ -183,16 +197,18 @@ async function fetchYahooKlinesRaw(symbol: string): Promise<Kline[]> {
 }
 
 async function fetchForexKlines(symbol: string): Promise<Kline[]> {
+  const cached = getCached(candleCache, `fx:${symbol}`, 5000);
+  if (cached) return cached;
   // Deriv first — gives clean 24/7 1m candles, big accuracy boost.
   try {
     const d = await fetchDerivKlines(symbol);
-    if (d.length >= 80) return d;
+    if (d.length >= 80) return setCached(candleCache, `fx:${symbol}`, d);
   } catch {}
   try {
     const y = await fetchYahooKlinesRaw(symbol);
-    if (y.length >= 80) return y;
+    if (y.length >= 80) return setCached(candleCache, `fx:${symbol}`, y);
   } catch {}
-  return fetchStooqFallbackKlines(symbol);
+  return setCached(candleCache, `fx:${symbol}`, await fetchStooqFallbackKlines(symbol));
 }
 
 async function fetchBinanceKlinesRaw(symbol: string): Promise<Kline[]> {
