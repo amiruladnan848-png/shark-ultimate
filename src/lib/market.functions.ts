@@ -232,8 +232,8 @@ async function fetchBinanceKlinesRaw(symbol: string): Promise<Kline[]> {
 
 export const fetchKlines = createServerFn({ method: "GET" })
   .inputValidator((d: { symbol: string; source: MarketSource }) => {
-    if (d.source !== "yahoo" && d.source !== "binance") throw new Error("Invalid market source");
-    if (d.source === "yahoo" && !isYahoo(d.symbol)) throw new Error("Invalid forex symbol");
+    if (d.source !== "deriv" && d.source !== "yahoo" && d.source !== "binance") throw new Error("Invalid market source");
+    if ((d.source === "deriv" || d.source === "yahoo") && !isYahoo(d.symbol)) throw new Error("Invalid forex symbol");
     if (d.source === "binance" && !isBinance(d.symbol)) throw new Error("Invalid crypto symbol");
     return d;
   })
@@ -289,8 +289,8 @@ export const fetchQuotes = createServerFn({ method: "POST" })
     if (!Array.isArray(d.pairs)) throw new Error("Invalid pairs");
     if (d.pairs.length > 40) throw new Error("Too many pairs");
     for (const p of d.pairs) {
-      if (p.source !== "yahoo" && p.source !== "binance") throw new Error("Invalid market source");
-      if (p.source === "yahoo" && !isYahoo(p.symbol)) throw new Error("Invalid forex symbol");
+      if (p.source !== "deriv" && p.source !== "yahoo" && p.source !== "binance") throw new Error("Invalid market source");
+      if ((p.source === "deriv" || p.source === "yahoo") && !isYahoo(p.symbol)) throw new Error("Invalid forex symbol");
       if (p.source === "binance" && !isBinance(p.symbol)) throw new Error("Invalid crypto symbol");
     }
     return d;
@@ -313,8 +313,8 @@ export const fetchQuotes = createServerFn({ method: "POST" })
 // Quick live close — used by client to evaluate signal win/loss for MTG.
 export const fetchLastClose = createServerFn({ method: "GET" })
   .inputValidator((d: { symbol: string; source: MarketSource }) => {
-    if (d.source !== "yahoo" && d.source !== "binance") throw new Error("Invalid market source");
-    if (d.source === "yahoo" && !isYahoo(d.symbol)) throw new Error("Invalid forex symbol");
+    if (d.source !== "deriv" && d.source !== "yahoo" && d.source !== "binance") throw new Error("Invalid market source");
+    if ((d.source === "deriv" || d.source === "yahoo") && !isYahoo(d.symbol)) throw new Error("Invalid forex symbol");
     if (d.source === "binance" && !isBinance(d.symbol)) throw new Error("Invalid crypto symbol");
     return d;
   })
