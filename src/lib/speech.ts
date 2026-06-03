@@ -79,13 +79,15 @@ export function buildBanglaSignalScript(opts: {
   direction: "BUY" | "SELL";
   confidence: number;
   quality: string;
+  session?: string;
   isMtg?: boolean;
 }) {
   const dir = opts.direction === "BUY" ? "বাই" : "সেল";
   const pair = pairBn(opts.pairLabel);
   const mtg = opts.isMtg ? "এম টি জি প্রথম ধাপ। " : "প্রফেশনাল মার্কেট স্ক্যান সম্পন্ন। ";
   const quality = opts.quality === "A+" ? "এ প্লাস" : opts.quality === "A" ? "এ" : "বি";
-  return `${mtg}${pair} এর জন্য ${dir} সিগন্যাল। কনফিডেন্স ${opts.confidence} শতাংশ। গ্রেড ${quality}। এক মিনিট এন্ট্রির জন্য প্রস্তুত হন।`;
+  const session = opts.session ? ` ${opts.session.replace(" session", "")} মার্কেট ডিটেক্টেড।` : "";
+  return `${mtg}${pair} এর জন্য ${dir} সিগন্যাল।${session} কনফিডেন্স ${opts.confidence} শতাংশ। গ্রেড ${quality}। এক মিনিট এন্ট্রির জন্য প্রস্তুত হন।`;
 }
 
 export function buildBanglaResultScript(win: boolean, isMtg: boolean) {
