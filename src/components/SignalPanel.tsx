@@ -148,6 +148,7 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
             direction: record.direction,
             confidence: record.confidence,
             quality: record.quality,
+            session: record.session,
             isMtg: asMtg,
           }),
         );
