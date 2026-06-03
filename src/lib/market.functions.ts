@@ -212,12 +212,14 @@ async function fetchForexKlines(symbol: string): Promise<Kline[]> {
 }
 
 async function fetchBinanceKlinesRaw(symbol: string): Promise<Kline[]> {
+  const cached = getCached(candleCache, `crypto:${symbol}`, 5000);
+  if (cached) return cached;
   const res = await fetch(binanceKlineUrl(symbol));
   if (!res.ok) throw new Error(`Crypto feed error (${res.status})`);
   const arr = (await res.json()) as Array<
     [number, string, string, string, string, string, number, string, number, string, string, string]
   >;
-  return arr
+  const out = arr
     .map((k) => ({
       openTime: k[0],
       open: parseFloat(k[1]),
@@ -228,6 +230,7 @@ async function fetchBinanceKlinesRaw(symbol: string): Promise<Kline[]> {
     }))
     .filter((k) => [k.open, k.high, k.low, k.close, k.volume].every(Number.isFinite))
     .sort((a, b) => a.openTime - b.openTime);
+  return setCached(candleCache, `crypto:${symbol}`, out);
 }
 
 export const fetchKlines = createServerFn({ method: "GET" })
@@ -249,10 +252,12 @@ export const fetchKlines = createServerFn({ method: "GET" })
 type QuoteInput = { symbol: string; source: MarketSource };
 
 async function fetchYahooQuoteRaw(symbol: string) {
+  const cached = getCached(quoteCache, `fx:${symbol}`, 5000);
+  if (cached) return cached;
   const quote = await fetchStooqQuote(symbol);
   if (quote) {
     const previous = quote.open > 0 ? quote.open : quote.close;
-    return { symbol, price: quote.close, change: previous === 0 ? 0 : ((quote.close - previous) / previous) * 100 };
+    return setCached(quoteCache, `fx:${symbol}`, { symbol, price: quote.close, change: previous === 0 ? 0 : ((quote.close - previous) / previous) * 100 });
   }
   const res = await fetch(yahooUrl(symbol), { headers: YAHOO_HEADERS });
   if (!res.ok) return null;
@@ -271,17 +276,19 @@ async function fetchYahooQuoteRaw(symbol: string) {
   const price = r?.meta.regularMarketPrice ?? closes.at(-1);
   const previous = r?.meta.chartPreviousClose ?? closes.at(-2) ?? price;
   if (price == null || previous == null || previous === 0) return null;
-  return { symbol, price, change: ((price - previous) / previous) * 100 };
+  return setCached(quoteCache, `fx:${symbol}`, { symbol, price, change: ((price - previous) / previous) * 100 });
 }
 
 async function fetchBinanceQuoteRaw(symbol: string) {
+  const cached = getCached(quoteCache, `crypto:${symbol}`, 5000);
+  if (cached) return cached;
   const res = await fetch(binanceTickerUrl(symbol));
   if (!res.ok) return null;
   const j = (await res.json()) as { lastPrice: string; priceChangePercent: string };
   const price = parseFloat(j.lastPrice);
   const change = parseFloat(j.priceChangePercent);
   if (!Number.isFinite(price)) return null;
-  return { symbol, price, change };
+  return setCached(quoteCache, `crypto:${symbol}`, { symbol, price, change });
 }
 
 export const fetchQuotes = createServerFn({ method: "POST" })
