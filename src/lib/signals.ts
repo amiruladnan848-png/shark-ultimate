@@ -326,7 +326,7 @@ export function generateSignal(klines: Kline[]): Signal {
 
 // Popular forex pairs (Yahoo Finance) + top crypto pairs (Binance public API, 24/7).
 export type PairKind = "forex" | "crypto";
-export type PairSource = "yahoo" | "binance";
+export type PairSource = "deriv" | "yahoo" | "binance";
 
 export type Pair = {
   symbol: string;
@@ -338,16 +338,16 @@ export type Pair = {
 };
 
 export const PAIRS: readonly Pair[] = [
-  // Forex (weekday)
-  { symbol: "EURUSD=X", label: "EUR / USD", tv: "FX:EURUSD", digits: 5, kind: "forex", source: "yahoo" },
-  { symbol: "GBPUSD=X", label: "GBP / USD", tv: "FX:GBPUSD", digits: 5, kind: "forex", source: "yahoo" },
-  { symbol: "JPY=X",    label: "USD / JPY", tv: "FX:USDJPY", digits: 3, kind: "forex", source: "yahoo" },
-  { symbol: "CHF=X",    label: "USD / CHF", tv: "FX:USDCHF", digits: 5, kind: "forex", source: "yahoo" },
-  { symbol: "AUDUSD=X", label: "AUD / USD", tv: "FX:AUDUSD", digits: 5, kind: "forex", source: "yahoo" },
-  { symbol: "CAD=X",    label: "USD / CAD", tv: "FX:USDCAD", digits: 5, kind: "forex", source: "yahoo" },
-  { symbol: "NZDUSD=X", label: "NZD / USD", tv: "FX:NZDUSD", digits: 5, kind: "forex", source: "yahoo" },
-  { symbol: "EURJPY=X", label: "EUR / JPY", tv: "FX:EURJPY", digits: 3, kind: "forex", source: "yahoo" },
-  { symbol: "GBPJPY=X", label: "GBP / JPY", tv: "FX:GBPJPY", digits: 3, kind: "forex", source: "yahoo" },
+  // Forex (weekday) — Deriv-first live candle feed with Yahoo/Stooq fallback.
+  { symbol: "EURUSD=X", label: "EUR / USD", tv: "FX:EURUSD", digits: 5, kind: "forex", source: "deriv" },
+  { symbol: "GBPUSD=X", label: "GBP / USD", tv: "FX:GBPUSD", digits: 5, kind: "forex", source: "deriv" },
+  { symbol: "JPY=X",    label: "USD / JPY", tv: "FX:USDJPY", digits: 3, kind: "forex", source: "deriv" },
+  { symbol: "CHF=X",    label: "USD / CHF", tv: "FX:USDCHF", digits: 5, kind: "forex", source: "deriv" },
+  { symbol: "AUDUSD=X", label: "AUD / USD", tv: "FX:AUDUSD", digits: 5, kind: "forex", source: "deriv" },
+  { symbol: "CAD=X",    label: "USD / CAD", tv: "FX:USDCAD", digits: 5, kind: "forex", source: "deriv" },
+  { symbol: "NZDUSD=X", label: "NZD / USD", tv: "FX:NZDUSD", digits: 5, kind: "forex", source: "deriv" },
+  { symbol: "EURJPY=X", label: "EUR / JPY", tv: "FX:EURJPY", digits: 3, kind: "forex", source: "deriv" },
+  { symbol: "GBPJPY=X", label: "GBP / JPY", tv: "FX:GBPJPY", digits: 3, kind: "forex", source: "deriv" },
   // Crypto (24/7) — Binance public API
   { symbol: "BTCUSDT",  label: "BTC / USDT",  tv: "BINANCE:BTCUSDT",  digits: 2, kind: "crypto", source: "binance" },
   { symbol: "ETHUSDT",  label: "ETH / USDT",  tv: "BINANCE:ETHUSDT",  digits: 2, kind: "crypto", source: "binance" },
