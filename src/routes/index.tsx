@@ -36,6 +36,7 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen px-4 sm:px-6 py-4 max-w-7xl mx-auto relative">
+      <div className="aurora-bg" aria-hidden />
       <motion.header
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}

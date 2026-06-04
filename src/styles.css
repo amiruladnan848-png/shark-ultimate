@@ -130,6 +130,43 @@
   0%,100% { opacity: .45; transform: translateX(-15%); }
   50% { opacity: 1; transform: translateX(15%); }
 }
+@keyframes aurora-drift {
+  0%   { transform: translate3d(-8%, -4%, 0) rotate(0deg); }
+  50%  { transform: translate3d(8%, 6%, 0) rotate(180deg); }
+  100% { transform: translate3d(-8%, -4%, 0) rotate(360deg); }
+}
+@keyframes orb-float {
+  0%,100% { transform: translate(0,0) scale(1); opacity: .55; }
+  50% { transform: translate(20px, -28px) scale(1.08); opacity: .85; }
+}
+@keyframes grid-pan {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 88px 88px, 88px 88px; }
+}
+
+/* Animated cinematic backdrop — drop a single <div class="aurora-bg" /> at app root */
+.aurora-bg {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden;
+  background:
+    radial-gradient(60% 50% at 20% 18%, oklch(0.52 0.22 300 / 0.35), transparent 60%),
+    radial-gradient(55% 45% at 85% 80%, oklch(0.55 0.22 190 / 0.32), transparent 60%),
+    radial-gradient(45% 40% at 70% 15%, oklch(0.58 0.2 150 / 0.22), transparent 60%);
+  animation: aurora-drift 28s ease-in-out infinite;
+  filter: blur(28px) saturate(1.15);
+}
+.aurora-bg::before, .aurora-bg::after {
+  content: ""; position: absolute; border-radius: 9999px; filter: blur(50px);
+}
+.aurora-bg::before {
+  width: 38vmax; height: 38vmax; top: -10%; left: -8%;
+  background: radial-gradient(circle, oklch(0.78 0.26 320 / 0.4), transparent 70%);
+  animation: orb-float 14s ease-in-out infinite;
+}
+.aurora-bg::after {
+  width: 42vmax; height: 42vmax; bottom: -14%; right: -10%;
+  background: radial-gradient(circle, oklch(0.82 0.2 190 / 0.35), transparent 70%);
+  animation: orb-float 18s ease-in-out infinite reverse;
+}
 
 .animate-scan { animation: scan-line 2.4s linear infinite; }
 .animate-pulse-glow { animation: pulse-glow 2.2s ease-in-out infinite; }

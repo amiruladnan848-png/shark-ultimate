@@ -91,7 +91,9 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
   async function settleSignal(s: SignalRecord) {
     try {
       const { price } = await fetchClose({ data: { symbol, source } });
-      const win = s.direction === "BUY" ? price > s.price : price < s.price;
+      // Tie-breaker tolerance — tiny float deltas should not be misread as a win.
+      const delta = price - s.price;
+      const win = s.direction === "BUY" ? delta > 0 : delta < 0;
       setLastResult({ win, isMtg: s.isMtg });
       if (voiceRef.current) speakBangla(buildBanglaResultScript(win, s.isMtg));
       if (!win && !s.isMtg) {
@@ -99,7 +101,11 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
         setMtgPending(true);
         setSignal(null);
         setPhase("idle");
-        setTimeout(() => { void scan(true); }, 1200);
+        const currentSymbol = symbol;
+        setTimeout(() => {
+          // Guard: user may have switched pair while we waited.
+          if (currentSymbol === symbol) void scan(true);
+        }, 1200);
       } else {
         setSignal(null);
         setPhase("idle");

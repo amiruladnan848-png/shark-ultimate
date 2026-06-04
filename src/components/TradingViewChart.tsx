@@ -120,6 +120,29 @@ function TradingViewChartInner({ symbol }: { symbol: string }) {
         <span className="absolute top-2 left-2 w-5 h-5 border-t border-l border-primary/60 rounded-tl" />
         <span className="absolute bottom-2 right-2 w-5 h-5 border-b border-r border-primary/60 rounded-br" />
 
+        {/* Live deep-analysis HUD — top-right */}
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-2 right-10 flex items-center gap-1.5 px-2 py-1 rounded-md bg-background/55 backdrop-blur-md border border-laser/30 text-[10px] font-mono text-laser/90 uppercase tracking-widest"
+        >
+          <motion.span animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.2, repeat: Infinity }} className="w-1.5 h-1.5 rounded-full bg-laser shadow-laser" />
+          Live Deep-Analysis
+        </motion.div>
+
+        {/* Rolling indicator readout — bottom-left */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="absolute bottom-2 left-10 flex items-center gap-2 px-2 py-1 rounded-md bg-background/55 backdrop-blur-md border border-primary/25 text-[10px] font-mono text-primary/90 uppercase tracking-widest"
+        >
+          <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.8, repeat: Infinity }}>EMA</motion.span>
+          <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, delay: 0.3 }}>·</motion.span>
+          <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, delay: 0.6 }}>RSI</motion.span>
+          <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, delay: 0.9 }}>·</motion.span>
+          <motion.span animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.8, repeat: Infinity, delay: 1.2 }}>VWAP</motion.span>
+        </motion.div>
+
         {/* Scan status badge */}
         <div className="absolute bottom-2 right-12 flex items-center gap-1.5 text-[10px] tracking-widest uppercase text-laser/85 font-mono">
           <motion.span animate={{ rotate: 360 }} transition={{ duration: 4, repeat: Infinity, ease: "linear" }}>
