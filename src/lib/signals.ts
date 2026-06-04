@@ -270,19 +270,36 @@ export function generateSignal(klines: Kline[]): Signal {
     { name: "Micro impulse", v: impulse >= 0 ? 1 : -1, w: 1.1 },
   ];
 
-  const exhaustionSell = r > 72 && stoch > 84 && bbPosition > 0.9 && (bodyPower < 0.22 || closeLocation < 0.58);
-  const exhaustionBuy = r < 28 && stoch < 16 && bbPosition < 0.1 && (bodyPower > -0.22 || closeLocation > 0.42);
-  if (exhaustionSell) votes.push({ name: "Overbought rejection", v: -1, w: 3.4 });
-  if (exhaustionBuy) votes.push({ name: "Oversold rejection", v: 1, w: 3.4 });
+  const exhaustionSell = r > 70 && stoch > 82 && bbPosition > 0.88 && (bodyPower < 0.22 || closeLocation < 0.55);
+  const exhaustionBuy = r < 30 && stoch < 18 && bbPosition < 0.12 && (bodyPower > -0.22 || closeLocation > 0.45);
+  if (exhaustionSell) votes.push({ name: "Overbought rejection", v: -1, w: 3.6 });
+  if (exhaustionBuy) votes.push({ name: "Oversold rejection", v: 1, w: 3.6 });
 
   // Triple-timeframe trend agreement amplifier (1m + 5m + 15m all in sync = high probability).
   const triBuy = ema9 > ema21 && e5Fast > e5Slow && e15Fast > e15Slow && price > vwap30;
   const triSell = ema9 < ema21 && e5Fast < e5Slow && e15Fast < e15Slow && price < vwap30;
-  if (triBuy) votes.push({ name: "Tri-TF bullish stack", v: 1, w: 3.6 });
-  if (triSell) votes.push({ name: "Tri-TF bearish stack", v: -1, w: 3.6 });
+  if (triBuy) votes.push({ name: "Tri-TF bullish stack", v: 1, w: 3.8 });
+  if (triSell) votes.push({ name: "Tri-TF bearish stack", v: -1, w: 3.8 });
 
-  const qualityMultiplier = clamp(1.14 - chopPenalty * 0.3 - (tooFlat ? 0.22 : 0) - (tooWild ? 0.18 : 0), 0.7, 1.22);
-  const trendStrength = clamp(adxVal / 24, 0.72, 1.5) * qualityMultiplier;
+  // Market structure — Higher-High / Higher-Low confirmation on the last 10 bars.
+  const structSlice = clean.slice(-10);
+  const highs = structSlice.map((k) => k.high);
+  const lows = structSlice.map((k) => k.low);
+  const hhhl = highs.at(-1)! > Math.max(...highs.slice(0, -1)) && lows.at(-1)! >= Math.min(...lows.slice(-4, -1));
+  const lhll = lows.at(-1)! < Math.min(...lows.slice(0, -1)) && highs.at(-1)! <= Math.max(...highs.slice(-4, -1));
+  if (hhhl) votes.push({ name: "HH/HL structure", v: 1, w: 2.4 });
+  if (lhll) votes.push({ name: "LH/LL structure", v: -1, w: 2.4 });
+
+  // MACD histogram acceleration (deep analysis of momentum derivative).
+  const macd3 = macd(closes.slice(0, -3));
+  const hist3 = macd3.macd - macd3.signal;
+  const histAccel = (hist - histPrev) - (histPrev - hist3);
+  if (Math.abs(histAccel) > Math.abs(hist) * 0.04) {
+    votes.push({ name: "MACD acceleration", v: histAccel >= 0 ? 1 : -1, w: 2.0 });
+  }
+
+  const qualityMultiplier = clamp(1.14 - chopPenalty * 0.32 - (tooFlat ? 0.24 : 0) - (tooWild ? 0.2 : 0), 0.7, 1.24);
+  const trendStrength = clamp(adxVal / 22, 0.72, 1.55) * qualityMultiplier;
   const score = votes.reduce((s, v) => s + v.v * v.w * trendStrength, 0);
   const maxScore = votes.reduce((s, v) => s + v.w * trendStrength, 0);
   const direction: Signal["direction"] = score >= 0 ? "BUY" : "SELL";
@@ -291,18 +308,24 @@ export function generateSignal(klines: Kline[]): Signal {
     (direction === "BUY" && ema9 > ema21 && e5Fast > e5Slow && hist >= histPrev && price >= vwap30 && bodyPower > -0.1) ||
     (direction === "SELL" && ema9 < ema21 && e5Fast < e5Slow && hist <= histPrev && price <= vwap30 && bodyPower < 0.1);
   const triAligned = (direction === "BUY" && triBuy) || (direction === "SELL" && triSell);
+  const structAligned = (direction === "BUY" && hhhl) || (direction === "SELL" && lhll);
   const session = sessionName();
-  const sessionBoost = session === "Low-liquidity session" ? -2 : session === "London session" || session === "New York session" ? 3 : 1;
-  const volatilityBoost = tooFlat ? -7 : tooWild ? -5 : 2.8;
-  const chopBoost = chopPenalty > 0.58 ? -5 : chopPenalty < 0.28 ? 2.5 : 0;
-  let confidence = 74 + agreement * 18 + Math.min(7, adxVal / 5) + Math.min(4.5, Math.abs(impulse) * 1.3);
-  confidence += coreAligned ? 7 : -2;
-  confidence += triAligned ? 4 : 0;
+  const sessionBoost = session === "Low-liquidity session" ? -3 : session === "London session" || session === "New York session" ? 3.5 : 1.2;
+  const volatilityBoost = tooFlat ? -8 : tooWild ? -6 : 3.2;
+  const chopBoost = chopPenalty > 0.58 ? -6 : chopPenalty < 0.28 ? 3 : 0;
+  let confidence = 75 + agreement * 18 + Math.min(7, adxVal / 5) + Math.min(4.5, Math.abs(impulse) * 1.3);
+  confidence += coreAligned ? 7.5 : -2.5;
+  confidence += triAligned ? 4.5 : 0;
+  confidence += structAligned ? 2.5 : 0;
   confidence += volatilityBoost + chopBoost + sessionBoost;
-  if (!coreAligned && agreement < 0.48) confidence -= 6;
-  if ((direction === "BUY" && exhaustionSell) || (direction === "SELL" && exhaustionBuy)) confidence -= 9;
-  confidence = clamp(confidence, coreAligned ? 85 : 78, 99);
-  const booster = clamp(confidence + (coreAligned ? 3 : 0) + (triAligned ? 2 : 0) + (chopPenalty < 0.34 ? 2 : -2), 72, 99);
+  if (!coreAligned && agreement < 0.48) confidence -= 7;
+  if ((direction === "BUY" && exhaustionSell) || (direction === "SELL" && exhaustionBuy)) confidence -= 10;
+  confidence = clamp(confidence, coreAligned ? 86 : 79, 99);
+  const booster = clamp(
+    confidence + (coreAligned ? 3 : 0) + (triAligned ? 2.5 : 0) + (structAligned ? 1.5 : 0) + (chopPenalty < 0.34 ? 2 : -2),
+    74,
+    99,
+  );
   const quality: Signal["quality"] =
     confidence >= 93 && coreAligned && triAligned && agreement > 0.62 ? "A+" :
     confidence >= 86 && coreAligned ? "A" : "B";
