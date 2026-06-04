@@ -88,13 +88,15 @@ export function buildBanglaSignalScript(opts: {
 }) {
   const dir = opts.direction === "BUY" ? "বাই" : "সেল";
   const pair = pairBn(opts.pairLabel);
-  const mtg = opts.isMtg ? "এম টি জি প্রথম ধাপ। " : "প্রফেশনাল মার্কেট স্ক্যান সম্পন্ন। ";
-  const quality = opts.quality === "A+" ? "এ প্লাস" : opts.quality === "A" ? "এ" : "বি";
-  const session = opts.session ? ` ${opts.session.replace(" session", "")} মার্কেট ডিটেক্টেড।` : "";
-  return `${mtg}${pair} এর জন্য ${dir} সিগন্যাল।${session} কনফিডেন্স ${opts.confidence} শতাংশ। গ্রেড ${quality}। এক মিনিট এন্ট্রির জন্য প্রস্তুত হন।`;
+  const intro = opts.isMtg
+    ? "এম টি জি প্রথম ধাপ এক্টিভেট। সতর্ক থাকুন। "
+    : "শার্ক আল্টিমেট প্রফেশনাল স্ক্যান সম্পন্ন। ";
+  const quality = opts.quality === "A+" ? "এ প্লাস প্রিমিয়াম" : opts.quality === "A" ? "এ গ্রেড" : "বি গ্রেড";
+  const session = opts.session ? ` ${opts.session.replace(" session", "")} সেশন ডিটেক্টেড।` : "";
+  return `${intro}${pair} পেয়ার এর জন্য ${dir} সিগন্যাল কনফার্মড।${session} কনফিডেন্স ${opts.confidence} শতাংশ। ${quality}। এক মিনিট এন্ট্রি উইন্ডো এর জন্য প্রস্তুত হন।`;
 }
 
 export function buildBanglaResultScript(win: boolean, isMtg: boolean) {
-  if (win) return isMtg ? "এম টি জি জয়। অভিনন্দন।" : "সিগন্যাল জয়। চমৎকার।";
-  return isMtg ? "এম টি জি লস। সতর্ক থাকুন।" : "সিগন্যাল লস। এম টি জি প্রস্তুত হচ্ছে।";
+  if (win) return isMtg ? "এম টি জি রিকভারি সফল। দারুন। অভিনন্দন।" : "সিগন্যাল উইন। চমৎকার পারফরম্যান্স।";
+  return isMtg ? "এম টি জি লস হয়েছে। রিস্ক ম্যানেজমেন্ট মেনে চলুন।" : "সিগন্যাল লস। এম টি জি স্টেপ প্রস্তুত হচ্ছে।";
 }
