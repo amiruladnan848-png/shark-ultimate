@@ -363,6 +363,19 @@ export function generateSignal(klines: Kline[]): Signal {
     target, stop, reason,
     entryAt, expiresAt,
     ts: Date.now(),
+    tradeable:
+      coreAligned &&
+      triAligned &&
+      agreement >= 0.6 &&
+      adxVal >= 20 &&
+      chopPenalty < 0.55 &&
+      !tooFlat &&
+      !tooWild &&
+      !(direction === "BUY" && exhaustionSell) &&
+      !(direction === "SELL" && exhaustionBuy) &&
+      confidence >= 86,
+    agreement: Math.round(agreement * 100) / 100,
+    chop: Math.round(chopPenalty * 100) / 100,
   };
 }
 
