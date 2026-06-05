@@ -37,12 +37,14 @@ export function speakBangla(text: string) {
     // Chunk long text — long single utterances get cut off by some browsers.
     const chunks = text.match(/[^।.!?]+[।.!?]?/g)?.map((s) => s.trim()).filter(Boolean) ?? [text];
     const v = cachedVoice ?? pickBanglaVoice();
+    const hasBangla = !!v && /^bn/i.test(v.lang);
     for (const chunk of chunks) {
       const utter = new SpeechSynthesisUtterance(chunk);
       if (v) { utter.voice = v; utter.lang = v.lang; }
       else { utter.lang = "bn-BD"; }
-      utter.rate = 0.96;
-      utter.pitch = 1.06;
+      // Slower, clearer cadence when a real Bangla voice is present; lighter pitch for English fallback.
+      utter.rate = hasBangla ? 0.92 : 0.88;
+      utter.pitch = hasBangla ? 1.08 : 1.0;
       utter.volume = 1;
       window.speechSynthesis.speak(utter);
     }
@@ -89,14 +91,15 @@ export function buildBanglaSignalScript(opts: {
   const dir = opts.direction === "BUY" ? "বাই" : "সেল";
   const pair = pairBn(opts.pairLabel);
   const intro = opts.isMtg
-    ? "এম টি জি প্রথম ধাপ এক্টিভেট। সতর্ক থাকুন। "
+    ? "মনোযোগ দিন। এম টি জি প্রথম ধাপ এক্টিভেট হয়েছে। "
     : "শার্ক আল্টিমেট প্রফেশনাল স্ক্যান সম্পন্ন। ";
-  const quality = opts.quality === "A+" ? "এ প্লাস প্রিমিয়াম" : opts.quality === "A" ? "এ গ্রেড" : "বি গ্রেড";
+  const quality = opts.quality === "A+" ? "এ প্লাস প্রিমিয়াম গ্রেড" : opts.quality === "A" ? "এ গ্রেড হাই কনফিডেন্স" : "বি গ্রেড";
   const session = opts.session ? ` ${opts.session.replace(" session", "")} সেশন ডিটেক্টেড।` : "";
-  return `${intro}${pair} পেয়ার এর জন্য ${dir} সিগন্যাল কনফার্মড।${session} কনফিডেন্স ${opts.confidence} শতাংশ। ${quality}। এক মিনিট এন্ট্রি উইন্ডো এর জন্য প্রস্তুত হন।`;
+  const dirEmphasis = opts.direction === "BUY" ? "আপ ডিরেকশন" : "ডাউন ডিরেকশন";
+  return `${intro}${pair} পেয়ার এর জন্য ${dir} সিগন্যাল কনফার্মড।${session} ${dirEmphasis} নিশ্চিত। কনফিডেন্স ${opts.confidence} শতাংশ। ${quality}। এক মিনিট এন্ট্রি উইন্ডো এর জন্য এখনই প্রস্তুত হন।`;
 }
 
 export function buildBanglaResultScript(win: boolean, isMtg: boolean) {
-  if (win) return isMtg ? "এম টি জি রিকভারি সফল। দারুন। অভিনন্দন।" : "সিগন্যাল উইন। চমৎকার পারফরম্যান্স।";
-  return isMtg ? "এম টি জি লস হয়েছে। রিস্ক ম্যানেজমেন্ট মেনে চলুন।" : "সিগন্যাল লস। এম টি জি স্টেপ প্রস্তুত হচ্ছে।";
+  if (win) return isMtg ? "এম টি জি রিকভারি সফল। চমৎকার। অভিনন্দন।" : "সিগন্যাল উইন। দারুন পারফরম্যান্স। শার্ক আল্টিমেট পাওয়ার।";
+  return isMtg ? "এম টি জি লস হয়েছে। অনুগ্রহ করে রিস্ক ম্যানেজমেন্ট মেনে চলুন।" : "সিগন্যাল লস। এম টি জি স্টেপ এক প্রস্তুত হচ্ছে। শান্ত থাকুন।";
 }

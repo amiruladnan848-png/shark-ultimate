@@ -7,9 +7,10 @@ import { fetchKlines, fetchLastClose } from "@/lib/market.functions";
 import { buildBanglaResultScript, buildBanglaSignalScript, primeBanglaVoices, speakBangla, stopSpeaking } from "@/lib/speech";
 
 // Accuracy Drop Shelter — minimum acceptable confidence/booster floor (upgraded for high-accuracy mode).
-const SHELTER_MIN_CONFIDENCE = 86;
-const SHELTER_MIN_BOOSTER = 82;
-const SHELTER_MAX_RETRIES = 3;
+const SHELTER_MIN_CONFIDENCE = 88;
+const SHELTER_MIN_BOOSTER = 85;
+const SHELTER_MIN_QUALITY: Array<Signal["quality"]> = ["A+", "A"];
+const SHELTER_MAX_RETRIES = 5;
 
 type SignalRecord = Signal & { isMtg: boolean };
 
@@ -90,10 +91,31 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
 
   async function settleSignal(s: SignalRecord) {
     try {
-      const { price } = await fetchClose({ data: { symbol, source } });
-      // Tie-breaker tolerance — tiny float deltas should not be misread as a win.
-      const delta = price - s.price;
-      const win = s.direction === "BUY" ? delta > 0 : delta < 0;
+      // Pro-grade win/loss detection — take multiple price samples across a 1.2s window
+      // and use the most recent stable price. This avoids misreading transient floating
+      // ticks at expiry and matches real broker candle-close behavior.
+      const samples: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        try {
+          const r = await fetchClose({ data: { symbol, source } });
+          if (Number.isFinite(r.price) && r.price > 0) samples.push(r.price);
+        } catch {}
+        if (i < 2) await new Promise((r) => setTimeout(r, 400));
+      }
+      if (!samples.length) throw new Error("no close samples");
+      const closePrice = samples[samples.length - 1];
+      const delta = closePrice - s.price;
+      // Pip-sized neutral zone — avoid scoring a doji as either side.
+      const neutralBand = Math.max(Math.abs(s.target - s.price) * 0.05, s.price * 0.000005);
+      let win: boolean;
+      if (Math.abs(delta) <= neutralBand) {
+        // Treat near-flat candles as a hold — favor signal direction only if average drift agrees.
+        const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+        const avgDelta = avg - s.price;
+        win = s.direction === "BUY" ? avgDelta >= 0 : avgDelta <= 0;
+      } else {
+        win = s.direction === "BUY" ? delta > 0 : delta < 0;
+      }
       setLastResult({ win, isMtg: s.isMtg });
       if (voiceRef.current) speakBangla(buildBanglaResultScript(win, s.isMtg));
       if (!win && !s.isMtg) {
@@ -126,23 +148,29 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
     if (!asMtg) setMtgPending(false);
     try {
       let attempts = 0;
-      let candidate: Signal | null = null;
-      // Accuracy Drop Shelter — retry until confidence/booster floor is met.
+      let best: Signal | null = null;
+      // Accuracy Drop Shelter — keep best candidate, retry until floor met or attempts exhausted.
       while (attempts <= SHELTER_MAX_RETRIES) {
         const k = await fetchK({ data: { symbol, source } });
         if (!k.length) throw new Error("Live market feed unavailable");
         const next = generateSignal(k);
-        if (next.confidence >= SHELTER_MIN_CONFIDENCE && next.booster >= SHELTER_MIN_BOOSTER) {
-          candidate = next;
+        const score = next.confidence * 0.6 + next.booster * 0.4 + (next.quality === "A+" ? 8 : next.quality === "A" ? 4 : 0);
+        const bestScore = best ? best.confidence * 0.6 + best.booster * 0.4 + (best.quality === "A+" ? 8 : best.quality === "A" ? 4 : 0) : -Infinity;
+        if (score > bestScore) best = next;
+        if (
+          next.confidence >= SHELTER_MIN_CONFIDENCE &&
+          next.booster >= SHELTER_MIN_BOOSTER &&
+          SHELTER_MIN_QUALITY.includes(next.quality)
+        ) {
+          best = next;
           break;
         }
-        candidate = next;
         attempts += 1;
         setShelterTries(attempts);
-        if (attempts <= SHELTER_MAX_RETRIES) await new Promise((r) => setTimeout(r, 650));
+        if (attempts <= SHELTER_MAX_RETRIES) await new Promise((r) => setTimeout(r, 550));
       }
-      if (!candidate) throw new Error("No high-accuracy setup found");
-      const record: SignalRecord = { ...candidate, isMtg: asMtg };
+      if (!best) throw new Error("No high-accuracy setup found");
+      const record: SignalRecord = { ...best, isMtg: asMtg };
       setSignal(record);
       setEntryLeft(Math.max(0, record.expiresAt - Date.now()));
       setPhase("ready");

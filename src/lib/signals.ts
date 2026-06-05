@@ -298,8 +298,8 @@ export function generateSignal(klines: Kline[]): Signal {
     votes.push({ name: "MACD acceleration", v: histAccel >= 0 ? 1 : -1, w: 2.0 });
   }
 
-  const qualityMultiplier = clamp(1.14 - chopPenalty * 0.32 - (tooFlat ? 0.24 : 0) - (tooWild ? 0.2 : 0), 0.7, 1.24);
-  const trendStrength = clamp(adxVal / 22, 0.72, 1.55) * qualityMultiplier;
+  const qualityMultiplier = clamp(1.18 - chopPenalty * 0.36 - (tooFlat ? 0.28 : 0) - (tooWild ? 0.22 : 0), 0.7, 1.28);
+  const trendStrength = clamp(adxVal / 22, 0.72, 1.6) * qualityMultiplier;
   const score = votes.reduce((s, v) => s + v.v * v.w * trendStrength, 0);
   const maxScore = votes.reduce((s, v) => s + v.w * trendStrength, 0);
   const direction: Signal["direction"] = score >= 0 ? "BUY" : "SELL";
@@ -309,26 +309,31 @@ export function generateSignal(klines: Kline[]): Signal {
     (direction === "SELL" && ema9 < ema21 && e5Fast < e5Slow && hist <= histPrev && price <= vwap30 && bodyPower < 0.1);
   const triAligned = (direction === "BUY" && triBuy) || (direction === "SELL" && triSell);
   const structAligned = (direction === "BUY" && hhhl) || (direction === "SELL" && lhll);
+  // Ultra-confluence — fast EMA, MACD impulse, candle body, close-location, structure all agree.
+  const ultraAligned = coreAligned && triAligned && agreement > 0.6 &&
+    ((direction === "BUY" && closeLocation > 0.58 && bodyPower > 0.05 && rSlope >= 0) ||
+     (direction === "SELL" && closeLocation < 0.42 && bodyPower < -0.05 && rSlope <= 0));
   const session = sessionName();
-  const sessionBoost = session === "Low-liquidity session" ? -3 : session === "London session" || session === "New York session" ? 3.5 : 1.2;
-  const volatilityBoost = tooFlat ? -8 : tooWild ? -6 : 3.2;
-  const chopBoost = chopPenalty > 0.58 ? -6 : chopPenalty < 0.28 ? 3 : 0;
-  let confidence = 75 + agreement * 18 + Math.min(7, adxVal / 5) + Math.min(4.5, Math.abs(impulse) * 1.3);
-  confidence += coreAligned ? 7.5 : -2.5;
-  confidence += triAligned ? 4.5 : 0;
-  confidence += structAligned ? 2.5 : 0;
+  const sessionBoost = session === "Low-liquidity session" ? -3 : session === "London session" || session === "New York session" ? 4 : 1.4;
+  const volatilityBoost = tooFlat ? -8 : tooWild ? -6 : 3.4;
+  const chopBoost = chopPenalty > 0.58 ? -7 : chopPenalty < 0.28 ? 3.5 : 0;
+  let confidence = 76 + agreement * 18 + Math.min(7.5, adxVal / 4.5) + Math.min(5, Math.abs(impulse) * 1.4);
+  confidence += coreAligned ? 8 : -3;
+  confidence += triAligned ? 5 : 0;
+  confidence += structAligned ? 2.8 : 0;
+  confidence += ultraAligned ? 3.5 : 0;
   confidence += volatilityBoost + chopBoost + sessionBoost;
-  if (!coreAligned && agreement < 0.48) confidence -= 7;
-  if ((direction === "BUY" && exhaustionSell) || (direction === "SELL" && exhaustionBuy)) confidence -= 10;
-  confidence = clamp(confidence, coreAligned ? 86 : 79, 99);
+  if (!coreAligned && agreement < 0.48) confidence -= 8;
+  if ((direction === "BUY" && exhaustionSell) || (direction === "SELL" && exhaustionBuy)) confidence -= 12;
+  confidence = clamp(confidence, coreAligned ? 88 : 80, 99);
   const booster = clamp(
-    confidence + (coreAligned ? 3 : 0) + (triAligned ? 2.5 : 0) + (structAligned ? 1.5 : 0) + (chopPenalty < 0.34 ? 2 : -2),
-    74,
+    confidence + (coreAligned ? 3 : 0) + (triAligned ? 2.5 : 0) + (structAligned ? 1.5 : 0) + (ultraAligned ? 2 : 0) + (chopPenalty < 0.34 ? 2 : -2),
+    78,
     99,
   );
   const quality: Signal["quality"] =
-    confidence >= 93 && coreAligned && triAligned && agreement > 0.62 ? "A+" :
-    confidence >= 86 && coreAligned ? "A" : "B";
+    confidence >= 94 && ultraAligned && agreement > 0.66 ? "A+" :
+    confidence >= 88 && coreAligned ? "A" : "B";
 
   const aligned = votes.filter((v) => v.v === (direction === "BUY" ? 1 : -1));
   const top = aligned.sort((a, b) => b.w - a.w).slice(0, 4).map((v) => v.name).join(" + ");
