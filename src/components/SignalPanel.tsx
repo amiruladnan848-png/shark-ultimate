@@ -10,7 +10,7 @@ import { buildBanglaResultScript, buildBanglaSignalScript, primeBanglaVoices, sp
 const SHELTER_MIN_CONFIDENCE = 88;
 const SHELTER_MIN_BOOSTER = 85;
 const SHELTER_MIN_QUALITY: Array<Signal["quality"]> = ["A+", "A"];
-const SHELTER_MAX_RETRIES = 5;
+const SHELTER_MAX_RETRIES = 8;
 
 type SignalRecord = Signal & { isMtg: boolean };
 
