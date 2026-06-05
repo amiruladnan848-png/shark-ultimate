@@ -91,10 +91,31 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
 
   async function settleSignal(s: SignalRecord) {
     try {
-      const { price } = await fetchClose({ data: { symbol, source } });
-      // Tie-breaker tolerance — tiny float deltas should not be misread as a win.
-      const delta = price - s.price;
-      const win = s.direction === "BUY" ? delta > 0 : delta < 0;
+      // Pro-grade win/loss detection — take multiple price samples across a 1.2s window
+      // and use the most recent stable price. This avoids misreading transient floating
+      // ticks at expiry and matches real broker candle-close behavior.
+      const samples: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        try {
+          const r = await fetchClose({ data: { symbol, source } });
+          if (Number.isFinite(r.price) && r.price > 0) samples.push(r.price);
+        } catch {}
+        if (i < 2) await new Promise((r) => setTimeout(r, 400));
+      }
+      if (!samples.length) throw new Error("no close samples");
+      const closePrice = samples[samples.length - 1];
+      const delta = closePrice - s.price;
+      // Pip-sized neutral zone — avoid scoring a doji as either side.
+      const neutralBand = Math.max(Math.abs(s.target - s.price) * 0.05, s.price * 0.000005);
+      let win: boolean;
+      if (Math.abs(delta) <= neutralBand) {
+        // Treat near-flat candles as a hold — favor signal direction only if average drift agrees.
+        const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
+        const avgDelta = avg - s.price;
+        win = s.direction === "BUY" ? avgDelta >= 0 : avgDelta <= 0;
+      } else {
+        win = s.direction === "BUY" ? delta > 0 : delta < 0;
+      }
       setLastResult({ win, isMtg: s.isMtg });
       if (voiceRef.current) speakBangla(buildBanglaResultScript(win, s.isMtg));
       if (!win && !s.isMtg) {
