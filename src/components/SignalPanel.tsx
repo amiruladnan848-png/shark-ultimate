@@ -7,9 +7,10 @@ import { fetchKlines, fetchLastClose } from "@/lib/market.functions";
 import { buildBanglaResultScript, buildBanglaSignalScript, primeBanglaVoices, speakBangla, stopSpeaking } from "@/lib/speech";
 
 // Accuracy Drop Shelter — minimum acceptable confidence/booster floor (upgraded for high-accuracy mode).
-const SHELTER_MIN_CONFIDENCE = 86;
-const SHELTER_MIN_BOOSTER = 82;
-const SHELTER_MAX_RETRIES = 3;
+const SHELTER_MIN_CONFIDENCE = 88;
+const SHELTER_MIN_BOOSTER = 85;
+const SHELTER_MIN_QUALITY: Array<Signal["quality"]> = ["A+", "A"];
+const SHELTER_MAX_RETRIES = 5;
 
 type SignalRecord = Signal & { isMtg: boolean };
 
