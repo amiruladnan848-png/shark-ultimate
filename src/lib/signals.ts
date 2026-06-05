@@ -27,6 +27,9 @@ export type Signal = {
   entryAt: number;    // ms timestamp - next 1m candle open in BDT
   expiresAt: number;  // ms timestamp - candle close (60s window)
   ts: number;
+  tradeable: boolean; // hard gate — false means skip / re-scan
+  agreement: number;
+  chop: number;
 };
 
 export type ScanPhase = "idle" | "scanning" | "ready" | "locked" | "error";
