@@ -10,7 +10,7 @@ import { buildBanglaResultScript, buildBanglaSignalScript, primeBanglaVoices, sp
 const SHELTER_MIN_CONFIDENCE = 88;
 const SHELTER_MIN_BOOSTER = 85;
 const SHELTER_MIN_QUALITY: Array<Signal["quality"]> = ["A+", "A"];
-const SHELTER_MAX_RETRIES = 5;
+const SHELTER_MAX_RETRIES = 8;
 
 type SignalRecord = Signal & { isMtg: boolean };
 
@@ -149,15 +149,20 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
     try {
       let attempts = 0;
       let best: Signal | null = null;
-      // Accuracy Drop Shelter — keep best candidate, retry until floor met or attempts exhausted.
+      // Accuracy Drop Shelter — keep best tradeable candidate, retry until floor met or attempts exhausted.
       while (attempts <= SHELTER_MAX_RETRIES) {
         const k = await fetchK({ data: { symbol, source } });
         if (!k.length) throw new Error("Live market feed unavailable");
         const next = generateSignal(k);
-        const score = next.confidence * 0.6 + next.booster * 0.4 + (next.quality === "A+" ? 8 : next.quality === "A" ? 4 : 0);
-        const bestScore = best ? best.confidence * 0.6 + best.booster * 0.4 + (best.quality === "A+" ? 8 : best.quality === "A" ? 4 : 0) : -Infinity;
+        const qBonus = next.quality === "A+" ? 10 : next.quality === "A" ? 5 : 0;
+        const tBonus = next.tradeable ? 15 : 0;
+        const score = next.confidence * 0.55 + next.booster * 0.35 + qBonus + tBonus;
+        const bestQBonus = best ? (best.quality === "A+" ? 10 : best.quality === "A" ? 5 : 0) : 0;
+        const bestTBonus = best?.tradeable ? 15 : 0;
+        const bestScore = best ? best.confidence * 0.55 + best.booster * 0.35 + bestQBonus + bestTBonus : -Infinity;
         if (score > bestScore) best = next;
         if (
+          next.tradeable &&
           next.confidence >= SHELTER_MIN_CONFIDENCE &&
           next.booster >= SHELTER_MIN_BOOSTER &&
           SHELTER_MIN_QUALITY.includes(next.quality)
@@ -169,7 +174,9 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
         setShelterTries(attempts);
         if (attempts <= SHELTER_MAX_RETRIES) await new Promise((r) => setTimeout(r, 550));
       }
-      if (!best) throw new Error("No high-accuracy setup found");
+      if (!best || !best.tradeable) {
+        throw new Error("No high-accuracy setup detected — market is choppy. Wait for the next clean impulse.");
+      }
       const record: SignalRecord = { ...best, isMtg: asMtg };
       setSignal(record);
       setEntryLeft(Math.max(0, record.expiresAt - Date.now()));
