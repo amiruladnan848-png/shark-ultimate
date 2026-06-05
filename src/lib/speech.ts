@@ -37,12 +37,14 @@ export function speakBangla(text: string) {
     // Chunk long text — long single utterances get cut off by some browsers.
     const chunks = text.match(/[^।.!?]+[।.!?]?/g)?.map((s) => s.trim()).filter(Boolean) ?? [text];
     const v = cachedVoice ?? pickBanglaVoice();
+    const hasBangla = !!v && /^bn/i.test(v.lang);
     for (const chunk of chunks) {
       const utter = new SpeechSynthesisUtterance(chunk);
       if (v) { utter.voice = v; utter.lang = v.lang; }
       else { utter.lang = "bn-BD"; }
-      utter.rate = 0.96;
-      utter.pitch = 1.06;
+      // Slower, clearer cadence when a real Bangla voice is present; lighter pitch for English fallback.
+      utter.rate = hasBangla ? 0.92 : 0.88;
+      utter.pitch = hasBangla ? 1.08 : 1.0;
       utter.volume = 1;
       window.speechSynthesis.speak(utter);
     }
