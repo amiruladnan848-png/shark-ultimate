@@ -148,23 +148,29 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
     if (!asMtg) setMtgPending(false);
     try {
       let attempts = 0;
-      let candidate: Signal | null = null;
-      // Accuracy Drop Shelter — retry until confidence/booster floor is met.
+      let best: Signal | null = null;
+      // Accuracy Drop Shelter — keep best candidate, retry until floor met or attempts exhausted.
       while (attempts <= SHELTER_MAX_RETRIES) {
         const k = await fetchK({ data: { symbol, source } });
         if (!k.length) throw new Error("Live market feed unavailable");
         const next = generateSignal(k);
-        if (next.confidence >= SHELTER_MIN_CONFIDENCE && next.booster >= SHELTER_MIN_BOOSTER) {
-          candidate = next;
+        const score = next.confidence * 0.6 + next.booster * 0.4 + (next.quality === "A+" ? 8 : next.quality === "A" ? 4 : 0);
+        const bestScore = best ? best.confidence * 0.6 + best.booster * 0.4 + (best.quality === "A+" ? 8 : best.quality === "A" ? 4 : 0) : -Infinity;
+        if (score > bestScore) best = next;
+        if (
+          next.confidence >= SHELTER_MIN_CONFIDENCE &&
+          next.booster >= SHELTER_MIN_BOOSTER &&
+          SHELTER_MIN_QUALITY.includes(next.quality)
+        ) {
+          best = next;
           break;
         }
-        candidate = next;
         attempts += 1;
         setShelterTries(attempts);
-        if (attempts <= SHELTER_MAX_RETRIES) await new Promise((r) => setTimeout(r, 650));
+        if (attempts <= SHELTER_MAX_RETRIES) await new Promise((r) => setTimeout(r, 550));
       }
-      if (!candidate) throw new Error("No high-accuracy setup found");
-      const record: SignalRecord = { ...candidate, isMtg: asMtg };
+      if (!best) throw new Error("No high-accuracy setup found");
+      const record: SignalRecord = { ...best, isMtg: asMtg };
       setSignal(record);
       setEntryLeft(Math.max(0, record.expiresAt - Date.now()));
       setPhase("ready");
