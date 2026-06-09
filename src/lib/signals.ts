@@ -379,6 +379,34 @@ export function generateSignal(klines: Kline[]): Signal {
   };
 }
 
+// Consensus signal — runs the analyzer on 3 progressively-trimmed candle sets
+// (full, -1, -2). Only emits a tradeable signal when all 3 bars agree on
+// direction AND each pass is individually tradeable. This is the merged
+// "Analyzer + Booster + Shelter" core — guards against single-bar noise
+// flips that cause losing signals.
+export function consensusSignal(klines: Kline[]): Signal {
+  const a = generateSignal(klines);
+  let agree = true;
+  let allTradeable = a.tradeable;
+  try {
+    const b = generateSignal(klines.slice(0, -1));
+    const c = generateSignal(klines.slice(0, -2));
+    agree = a.direction === b.direction && b.direction === c.direction;
+    allTradeable = a.tradeable && b.tradeable && c.tradeable;
+  } catch {
+    agree = false;
+  }
+  const confidence = clamp(a.confidence + (agree ? 4 : -8), 70, 99);
+  const booster = clamp(a.booster + (agree && allTradeable ? 4 : -6), 70, 99);
+  return {
+    ...a,
+    confidence: Math.round(confidence),
+    booster: Math.round(booster),
+    tradeable: a.tradeable && agree && allTradeable && confidence >= 88,
+    reason: agree ? `${a.reason} · 3-bar consensus locked` : `${a.reason} · consensus split (rejected)`,
+  };
+}
+
 // Popular forex pairs (Yahoo Finance) + top crypto pairs (Binance public API, 24/7).
 export type PairKind = "forex" | "crypto";
 export type PairSource = "deriv" | "yahoo" | "binance";

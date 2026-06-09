@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useServerFn } from "@tanstack/react-start";
 import { TrendingUp, TrendingDown, Zap, Target, Shield, Activity, ScanLine, LockKeyhole, Timer, Clock, Gauge, BadgeCheck, Volume2, VolumeX, ShieldAlert, RefreshCw } from "lucide-react";
-import { generateSignal, formatPrice, formatBDTime, isBangladeshWeekend, type Signal, type ScanPhase, type PairKind, type PairSource } from "@/lib/signals";
+import { consensusSignal, formatPrice, formatBDTime, isBangladeshWeekend, type Signal, type ScanPhase, type PairKind, type PairSource } from "@/lib/signals";
 import { fetchKlines, fetchLastClose } from "@/lib/market.functions";
 import { buildBanglaResultScript, buildBanglaSignalScript, primeBanglaVoices, speakBangla, stopSpeaking } from "@/lib/speech";
 
@@ -30,8 +30,30 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
   const fetchClose = useServerFn(fetchLastClose);
   const voiceRef = useRef(voiceOn);
   voiceRef.current = voiceOn;
+  // Continuous Live Analyzer — keeps a freshly-computed consensus signal warm
+  // in the background so manual scans return instantly with the best setup.
+  const liveRef = useRef<{ s: Signal; ts: number } | null>(null);
 
   useEffect(() => { primeBanglaVoices(); }, []);
+
+  // Continuous background analyzer — Deriv WS → consensus engine every 7s.
+  useEffect(() => {
+    if (locked) { liveRef.current = null; return; }
+    let mounted = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const loop = async () => {
+      try {
+        const k = await fetchK({ data: { symbol, source } });
+        if (k.length && mounted) {
+          const s = consensusSignal(k);
+          liveRef.current = { s, ts: Date.now() };
+        }
+      } catch {}
+      if (mounted) timer = setTimeout(loop, 7000);
+    };
+    loop();
+    return () => { mounted = false; if (timer) clearTimeout(timer); liveRef.current = null; };
+  }, [symbol, source, locked, fetchK]);
 
   useEffect(() => {
     setSignal(null);
@@ -149,18 +171,30 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
     try {
       let attempts = 0;
       let best: Signal | null = null;
-      // Accuracy Drop Shelter — keep best tradeable candidate, retry until floor met or attempts exhausted.
-      while (attempts <= SHELTER_MAX_RETRIES) {
+      const scoreOf = (n: Signal) => {
+        const qB = n.quality === "A+" ? 10 : n.quality === "A" ? 5 : 0;
+        const tB = n.tradeable ? 15 : 0;
+        return n.confidence * 0.55 + n.booster * 0.35 + qB + tB;
+      };
+      // Merged pipeline: Live Analyzer warm cache → Consensus engine → Booster → Shelter.
+      // Fast path: if the background analyzer already has a fresh tradeable signal, use it.
+      const warm = liveRef.current;
+      if (
+        warm &&
+        Date.now() - warm.ts < 5500 &&
+        warm.s.tradeable &&
+        warm.s.confidence >= SHELTER_MIN_CONFIDENCE &&
+        warm.s.booster >= SHELTER_MIN_BOOSTER &&
+        SHELTER_MIN_QUALITY.includes(warm.s.quality)
+      ) {
+        best = warm.s;
+      }
+      while (!best || !best.tradeable) {
+        if (attempts > SHELTER_MAX_RETRIES) break;
         const k = await fetchK({ data: { symbol, source } });
         if (!k.length) throw new Error("Live market feed unavailable");
-        const next = generateSignal(k);
-        const qBonus = next.quality === "A+" ? 10 : next.quality === "A" ? 5 : 0;
-        const tBonus = next.tradeable ? 15 : 0;
-        const score = next.confidence * 0.55 + next.booster * 0.35 + qBonus + tBonus;
-        const bestQBonus = best ? (best.quality === "A+" ? 10 : best.quality === "A" ? 5 : 0) : 0;
-        const bestTBonus = best?.tradeable ? 15 : 0;
-        const bestScore = best ? best.confidence * 0.55 + best.booster * 0.35 + bestQBonus + bestTBonus : -Infinity;
-        if (score > bestScore) best = next;
+        const next = consensusSignal(k);
+        if (!best || scoreOf(next) > scoreOf(best)) best = next;
         if (
           next.tradeable &&
           next.confidence >= SHELTER_MIN_CONFIDENCE &&
@@ -172,7 +206,7 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
         }
         attempts += 1;
         setShelterTries(attempts);
-        if (attempts <= SHELTER_MAX_RETRIES) await new Promise((r) => setTimeout(r, 550));
+        await new Promise((r) => setTimeout(r, 500));
       }
       if (!best || !best.tradeable) {
         throw new Error("No high-accuracy setup detected — market is choppy. Wait for the next clean impulse.");
