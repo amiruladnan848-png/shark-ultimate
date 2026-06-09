@@ -112,8 +112,9 @@ function Dashboard() {
           <div className="glass rounded-3xl p-4 mt-4 professional-frame">
             <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">Engine</div>
             <ul className="text-xs space-y-1.5 text-muted-foreground">
-              <li className="flex justify-between gap-3"><span>Data feed</span><span className="text-foreground text-right">Deriv WS · Yahoo FX · Binance crypto</span></li>
-              <li className="flex justify-between gap-3"><span>Accuracy shelter</span><span className="text-foreground text-right">Auto re-scan below 82%</span></li>
+              <li className="flex justify-between gap-3"><span>Pipeline</span><span className="text-foreground text-right">Live Analyzer → Consensus → Booster → Shelter</span></li>
+              <li className="flex justify-between gap-3"><span>Data feed</span><span className="text-foreground text-right">Deriv WS · Yahoo FX · Binance crypto · TradingView</span></li>
+              <li className="flex justify-between gap-3"><span>Accuracy shelter</span><span className="text-foreground text-right">Auto re-scan below 88%</span></li>
               <li className="flex justify-between gap-3"><span>MTG</span><span className="text-foreground text-right">1-step recovery on loss</span></li>
               <li className="flex justify-between gap-3"><span>Voice</span><span className="text-foreground text-right">Bangla AI (bn-BD)</span></li>
               <li className="flex justify-between"><span>Signal mode</span><span className="text-foreground inline-flex items-center gap-1"><ScanLine className="w-3 h-3 text-laser" /> Manual</span></li>
