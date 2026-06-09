@@ -365,13 +365,36 @@ export const fetchLastClose = createServerFn({ method: "GET" })
     if (d.source === "binance" && !isBinance(d.symbol)) throw new Error("Invalid crypto symbol");
     return d;
   })
-  .handler(async ({ data }): Promise<{ price: number }> => {
-    if (data.source === "binance") {
-      const q = await fetchBinanceQuoteRaw(data.symbol);
-      if (!q) throw new Error("Quote unavailable");
-      return { price: q.price };
+  .handler(async ({ data }): Promise<{ price: number; stale: boolean }> => {
+    // Graceful pipeline: primary quote → secondary quote → last kline close.
+    // Never throws — settleSignal must always get a price to evaluate win/loss.
+    try {
+      if (data.source === "binance") {
+        const q = await fetchBinanceQuoteRaw(data.symbol);
+        if (q && Number.isFinite(q.price) && q.price > 0) return { price: q.price, stale: false };
+      } else {
+        const q = await fetchForexQuoteRaw(data.symbol);
+        if (q && Number.isFinite(q.price) && q.price > 0) return { price: q.price, stale: false };
+      }
+    } catch (err) {
+      console.warn(`[fetchLastClose] primary quote failed for ${data.symbol}:`, err);
     }
-    const q = await fetchForexQuoteRaw(data.symbol);
-    if (!q) throw new Error("Quote unavailable");
-    return { price: q.price };
+    // Fallback — use the most recent candle close from the kline feed.
+    try {
+      const klines = data.source === "binance"
+        ? await fetchBinanceKlinesRaw(data.symbol)
+        : await fetchForexKlines(data.symbol);
+      const last = klines.at(-1);
+      if (last && Number.isFinite(last.close) && last.close > 0) {
+        return { price: last.close, stale: true };
+      }
+    } catch (err) {
+      console.warn(`[fetchLastClose] kline fallback failed for ${data.symbol}:`, err);
+    }
+    // Last-resort cached quote.
+    const cached = quoteCache.get(`${data.source === "binance" ? "crypto" : "fx"}:${data.symbol}`);
+    if (cached && Number.isFinite(cached.data.price) && cached.data.price > 0) {
+      return { price: cached.data.price, stale: true };
+    }
+    return { price: 0, stale: true };
   });
