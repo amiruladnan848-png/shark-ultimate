@@ -365,45 +365,45 @@ export function generateSignal(klines: Kline[]): Signal {
     ts: Date.now(),
     tradeable:
       coreAligned &&
-      triAligned &&
-      agreement >= 0.6 &&
-      adxVal >= 20 &&
-      chopPenalty < 0.55 &&
+      agreement >= 0.52 &&
       !tooFlat &&
       !tooWild &&
       !(direction === "BUY" && exhaustionSell) &&
       !(direction === "SELL" && exhaustionBuy) &&
-      confidence >= 86,
+      confidence >= 82,
     agreement: Math.round(agreement * 100) / 100,
     chop: Math.round(chopPenalty * 100) / 100,
   };
 }
 
 // Consensus signal — runs the analyzer on 3 progressively-trimmed candle sets
-// (full, -1, -2). Only emits a tradeable signal when all 3 bars agree on
-// direction AND each pass is individually tradeable. This is the merged
-// "Analyzer + Booster + Shelter" core — guards against single-bar noise
-// flips that cause losing signals.
+// (full, -1, -2). Boosts confidence when 3-of-3 agree, accepts 2-of-3 as
+// tradeable (most-recent must agree). This is the merged
+// "Analyzer + Booster + Shelter" core.
 export function consensusSignal(klines: Kline[]): Signal {
   const a = generateSignal(klines);
-  let agree = true;
+  let agreeAll = true;
+  let agreeMajority = true;
   let allTradeable = a.tradeable;
   try {
     const b = generateSignal(klines.slice(0, -1));
     const c = generateSignal(klines.slice(0, -2));
-    agree = a.direction === b.direction && b.direction === c.direction;
-    allTradeable = a.tradeable && b.tradeable && c.tradeable;
+    agreeAll = a.direction === b.direction && b.direction === c.direction;
+    // Majority: current + at least one of the previous two agrees with current.
+    agreeMajority = a.direction === b.direction || a.direction === c.direction;
+    allTradeable = a.tradeable && (b.tradeable || c.tradeable);
   } catch {
-    agree = false;
+    agreeAll = false;
+    agreeMajority = true;
   }
-  const confidence = clamp(a.confidence + (agree ? 4 : -8), 70, 99);
-  const booster = clamp(a.booster + (agree && allTradeable ? 4 : -6), 70, 99);
+  const confidence = clamp(a.confidence + (agreeAll ? 5 : agreeMajority ? 1 : -6), 70, 99);
+  const booster = clamp(a.booster + (agreeAll && allTradeable ? 4 : agreeMajority ? 0 : -5), 70, 99);
   return {
     ...a,
     confidence: Math.round(confidence),
     booster: Math.round(booster),
-    tradeable: a.tradeable && agree && allTradeable && confidence >= 88,
-    reason: agree ? `${a.reason} · 3-bar consensus locked` : `${a.reason} · consensus split (rejected)`,
+    tradeable: a.tradeable && agreeMajority && confidence >= 82,
+    reason: agreeAll ? `${a.reason} · 3-bar consensus locked` : agreeMajority ? `${a.reason} · 2-bar consensus` : `${a.reason} · consensus split`,
   };
 }
 
