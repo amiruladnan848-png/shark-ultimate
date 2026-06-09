@@ -6,11 +6,13 @@ import { consensusSignal, formatPrice, formatBDTime, isBangladeshWeekend, type S
 import { fetchKlines, fetchLastClose } from "@/lib/market.functions";
 import { buildBanglaResultScript, buildBanglaSignalScript, primeBanglaVoices, speakBangla, stopSpeaking } from "@/lib/speech";
 
-// Accuracy Drop Shelter — minimum acceptable confidence/booster floor (upgraded for high-accuracy mode).
-const SHELTER_MIN_CONFIDENCE = 88;
-const SHELTER_MIN_BOOSTER = 85;
+// Accuracy Drop Shelter — preferred floor for high-accuracy mode.
+const SHELTER_MIN_CONFIDENCE = 86;
+const SHELTER_MIN_BOOSTER = 82;
 const SHELTER_MIN_QUALITY: Array<Signal["quality"]> = ["A+", "A"];
-const SHELTER_MAX_RETRIES = 8;
+const SHELTER_MAX_RETRIES = 6;
+// Absolute floor — below this we still won't issue, but above it we always release best.
+const ABSOLUTE_MIN_CONFIDENCE = 78;
 
 type SignalRecord = Signal & { isMtg: boolean };
 
@@ -206,10 +208,11 @@ export function SignalPanel({ symbol, label, digits, kind, source }: { symbol: s
         }
         attempts += 1;
         setShelterTries(attempts);
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 450));
       }
-      if (!best || !best.tradeable) {
-        throw new Error("No high-accuracy setup detected — market is choppy. Wait for the next clean impulse.");
+      // Always release the best available candidate as long as it clears the absolute floor.
+      if (!best || best.confidence < ABSOLUTE_MIN_CONFIDENCE) {
+        throw new Error("Live feed too thin to score a setup — try again in a moment.");
       }
       const record: SignalRecord = { ...best, isMtg: asMtg };
       setSignal(record);
